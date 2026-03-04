@@ -1190,24 +1190,15 @@ def _index():
 @app.route('/preview-html/<uid>/<filename>')
 def preview_html_result(uid, filename):
     """
-    Просмотр HTML-оригинала (до конвертации в PDF).
-    Использует debug_cover.html, который формируется при сборке отчета.
+    Просмотр итогового HTML с подсветкой (не обложка),
+    используя уже существующий рендер report_view.
     """
     directory = os.path.join(UPLOAD_FOLDER, uid)
-
     if not os.path.exists(directory):
         return "File not found (bad uid)", 404
 
-    html_path = os.path.join(directory, 'debug_cover.html')
-    if not os.path.exists(html_path):
-        return "HTML preview not found", 404
-
-    return send_file(
-        html_path,
-        as_attachment=False,
-        download_name=f"{os.path.splitext(filename)[0]}_cover.html",
-        mimetype='text/html; charset=utf-8'
-    )
+    # Это именно HTML-представление результата выделений.
+    return redirect(url_for('report_view', uid=uid, filename=filename))
 
 
 @app.route('/preview/<uid>/<filename>')
