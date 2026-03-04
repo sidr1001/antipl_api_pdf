@@ -46,6 +46,29 @@ UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 PATH_TO_LO = '/usr/bin/libreoffice' 
 
+
+def resolve_times_font():
+    """
+    Ищет Times New Roman в системе.
+    Возвращает путь к TTF/OTF, если найден, иначе None.
+    """
+    candidates = [
+        '/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf',
+        '/usr/share/fonts/truetype/msttcorefonts/times.ttf',
+        '/usr/share/fonts/truetype/msttcorefonts/timesnewroman.ttf',
+        '/usr/share/fonts/truetype/msttcorefonts/Times New Roman.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf',
+    ]
+
+    for font_path in candidates:
+        if os.path.exists(font_path):
+            return font_path
+    return None
+
+
+TIMES_FONT_FILE = resolve_times_font()
+
 # Настройка wkhtmltopdf (укажите правильный путь, если отличается)
 config_pdf = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')
 
@@ -218,8 +241,13 @@ def draw_stylish_badge(page, rect, text, bg_color=None):
     # Шрифт подстраиваем под новую высоту (чуть уменьшаем кэф, чтобы не прилипал к краям)
     font_size = badge_height * 0.90 
     
-    # font = fitz.Font("helv")
-    font = fitz.Font("tiro") # Times Roman (аналог Times New Roman)
+    # Используем реальный TTF/OTF, если доступен.
+    # Это гарантирует одинаковый вид шрифта в местах окраса (бейджи),
+    # а не системный fallback от PDF-ридера.
+    if TIMES_FONT_FILE:
+        font = fitz.Font(fontfile=TIMES_FONT_FILE)
+    else:
+        font = fitz.Font("times-roman")
     text_len_px = font.text_length(str_num, fontsize=font_size)
     
     total_badge_width = triangle_width + rect_width
@@ -228,14 +256,20 @@ def draw_stylish_badge(page, rect, text, bg_color=None):
     text_x = start_x + (total_badge_width / 2) - (text_len_px / 2) + (triangle_width / 4)
     text_y = center_y + (font_size * 0.35)
 
-    page.insert_text(
-        point=(text_x, text_y), 
-        text=str_num, 
-        fontsize=font_size, 
-        color=final_text_color, 
-        fontname="tiro", 
-        render_mode=0
-    )
+    insert_kwargs = {
+        'point': (text_x, text_y),
+        'text': str_num,
+        'fontsize': font_size,
+        'color': final_text_color,
+        'render_mode': 0,
+    }
+
+    if TIMES_FONT_FILE:
+        insert_kwargs['fontfile'] = TIMES_FONT_FILE
+    else:
+        insert_kwargs['fontname'] = 'times-roman'
+
+    page.insert_text(**insert_kwargs)
 
 def create_highlighted_pdf(docx_path, api_response, pc_percent=0.0, output_folder=UPLOAD_FOLDER):
     t_start = time.time()    
