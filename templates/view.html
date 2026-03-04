@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Отчет Антиплагиат</title>
+    <style>
+        /* --- ТУЛБАР (Меню) --- */
+        .toolbar {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 60px;
+            background: #333;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            gap: 15px; /* Отступы между кнопками */
+        }
+		.toolbar a{pointer-events: initial!important;}
+
+        .filename-label {
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-weight: bold;
+            color: #ddd;
+        }
+
+        /* Стили для кнопок в меню */
+        .btn {
+            text-decoration: none;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            display: inline-flex;
+            align-items: center;
+            transition: background 0.2s;
+        }
+
+        .btn-primary { background-color: #007bff; }
+        .btn-primary:hover { background-color: #0056b3; }
+
+        .btn-secondary { background-color: #6c757d; }
+        .btn-secondary:hover { background-color: #545b62; }
+        
+        .btn-outline { border-color: #888; color: #ddd !important; text-decoration: none !important; }
+        .btn-outline:hover { background-color: rgba(255,255,255,0.1); color: white; }
+
+        /* --- ДОКУМЕНТ --- */
+        .document-container {
+            margin-top: 70px; /* Отступ под тулбар */
+            display: flex;
+            justify-content: center;
+        }
+        .page {
+            background: white;
+            padding: 20mm;
+            width: 210mm;
+            min-height: 297mm;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            margin-bottom: 20px;
+            box-sizing: border-box;
+            
+            font-family: 'Times New Roman', serif;
+            font-size: 12pt;
+            line-height: 1.5;
+            overflow-wrap: break-word;
+        }
+
+        /* --- ВЫДЕЛЕНИЯ И ШИЛЬДИКИ --- */
+        
+        /* Исправление ошибки: отключаем ссылки ТОЛЬКО внутри страницы */
+        .page a {
+            color: inherit;
+            text-decoration: none;
+            pointer-events: none; /* Чтобы нельзя было кликнуть по ссылке в тексте */
+            cursor: text;
+        }
+
+        /* Обновленные стили выделения */
+        .plagiat-highlight {
+            background-color: #fdb79d;
+        }
+
+        /* Стиль шильдика [1] */
+        .plagiat-badge {
+			text-indent: initial;
+            display: inline-block;
+            position: relative;
+            height: 24px; 
+            line-height: 24px;             
+            font-family: Arial, sans-serif;
+            font-size: 14px; 
+            font-weight: bold;
+            color: #FFF;
+            background-color: #FF723A;            
+            padding: 0 4px;
+            margin-left: 10px; 
+            vertical-align: middle; 
+            cursor: pointer;
+            user-select: none;
+            top: -2px; 
+        }
+        .plagiat-badge::before {
+            content: "";
+            position: absolute;
+            right: 100%;
+            top: 0;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 12px 7px; 
+            border-color: transparent #FF723A transparent transparent;
+        }
+		.plagiat-badge::after{}
+
+        /* Ссылки (если вдруг остались какие-то сложные) делаем черными */
+        .page a { color: inherit; text-decoration: none; pointer-events: none; }
+
+        img { max-width: 100%; height: auto; }	
+
+/* --- СТИЛИ ДЛЯ КОЛОНТИТУЛОВ --- */
+        
+        /* В режиме просмотра на экране показываем их просто сверху/снизу */
+        header, .doc-header {
+            border-bottom: 1px solid #ccc;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            color: #666;
+        }
+        footer, .doc-footer {
+            border-top: 1px solid #ccc;
+            margin-top: 20px;
+            padding-top: 10px;
+            color: #666;
+        }		
+        
+
+ /* --- ПЕЧАТЬ И PDF --- */
+        @media print {
+            body { 
+                background: white; 
+                margin: 0; 
+                padding: 0;
+            }
+            .toolbar { display: none; }
+            .document-container { margin: 0; display: block; }
+            
+            /* Сбрасываем тени и отступы страницы */
+            .page { 
+                box-shadow: none; 
+                margin: 0; 
+                width: 100%; 
+                border: none;
+                /* Важно: добавляем отступы ВНУТРИ страницы под колонтитулы */
+                padding-top: 30mm; 
+                padding-bottom: 20mm;
+            }
+
+            /* ЗАКРЕПЛЯЕМ КОЛОНТИТУЛЫ */
+            header, .doc-header {
+                position: fixed; /* Закрепить относительно листа бумаги */
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 20mm; /* Высота шапки */
+                background: white; /* Чтобы текст не просвечивал */
+                z-index: 1000;
+                overflow: hidden;
+            }
+
+            footer, .doc-footer {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 15mm;
+                background: white;
+                z-index: 1000;
+                overflow: hidden;
+            }
+            
+            /* Таблицы не должны разрываться внутри строк при переносе */
+            table { page-break-inside: auto; }
+            tr    { page-break-inside: avoid; page-break-after: auto; }
+            
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</head>
+<body>
+
+	<div class="toolbar">
+        <a href="/" class="btn btn-secondary">
+            &larr; На главную
+        </a>
+
+        <div class="filename-label">
+            {{ filename }}
+        </div>
+        
+        <a href="{{ url_for('reconvert_document', filename=filename) }}" class="btn btn-outline" title="Если верстка сломалась">
+            &#x21bb; Пересобрать HTML
+        </a>
+
+        <button onclick="window.print()" class="btn btn-primary">
+            Скачать PDF
+        </button>
+    </div>
+
+    <div class="document-container">
+        <div class="page">
+            {{ html_content | safe }}
+        </div>
+    </div>
+
+</body>
+</html>

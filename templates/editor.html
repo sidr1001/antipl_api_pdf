@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { background: #323639; margin: 0; font-family: sans-serif; }
+        .toolbar { 
+            position: fixed; top: 0; width: 100%; background: #2b2b2b; 
+            color: white; padding: 10px; display: flex; justify-content: center; 
+            align-items: center; gap: 20px; z-index: 1000;
+        }
+        #viewer { margin-top: 60px; display: flex; justify-content: center; padding: 20px; }
+        .page-svg-container { 
+            background: white; box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            max-width: 1000px; line-height: 0;
+        }
+        .page-svg-container svg { width: 100%; height: auto; }
+        button { padding: 8px 16px; cursor: pointer; background: #444; border: 1px solid #666; color: white; border-radius: 4px; }
+        button:disabled { opacity: 0.3; }
+    </style>
+</head>
+<body>
+
+<div class="toolbar">
+    <button id="prevBtn" onclick="changePage(-1)">← Назад</button>
+    <span>Страница <span id="currentNum">1</span> из <span id="totalNum">...</span></span>
+    <button id="nextBtn" onclick="changePage(1)">Вперед →</button>
+</div>
+
+<div id="viewer">
+    <div id="pageContent" class="page-svg-container">
+        </div>
+</div>
+
+<script>
+    let currentPage = 1; // Для пользователя это 1, для API это индекс 1 (пропуск обложки)
+    let maxPages = 0;
+    const uid = "{{ uid }}";
+    const filename = "{{ filename }}";
+
+    async function init() {
+        const res = await fetch(`/api/get_doc_info/${uid}/${filename}`);
+        const data = await res.json();
+        maxPages = data.total_pages;
+        document.getElementById('totalNum').innerText = maxPages;
+        
+        if (maxPages === 0) {
+            document.getElementById('pageContent').innerHTML = "<p style='padding:20px'>Документ пуст или содержит только обложку/источники</p>";
+        } else {
+            loadPage(1);
+        }
+    }
+
+    async function loadPage(num) {
+        // Мы прибавляем 1, потому что API пропустит 0-ю страницу (обложку)
+        const response = await fetch(`/api/get_page/${uid}/${filename}/${num}`);
+        if (response.ok) {
+            const svgText = await response.text();
+            document.getElementById('pageContent').innerHTML = svgText;
+            document.getElementById('currentNum').innerText = num;
+            
+            document.getElementById('prevBtn').disabled = (num <= 1);
+            document.getElementById('nextBtn').disabled = (num >= maxPages);
+        }
+    }
+
+    function changePage(delta) {
+        if (currentPage + delta >= 1 && currentPage + delta <= maxPages) {
+            currentPage += delta;
+            loadPage(currentPage);
+            window.scrollTo(0,0);
+        }
+    }
+	
+	async function initEditor() {
+		try {
+			const res = await fetch(`/api/get_doc_info/${uid}/${filename}`);
+			const info = await res.json();
+			
+			maxPages = info.total_pages;
+			offset = info.offset; // Важно: берем смещение из API
+			
+			document.getElementById('totalPage').innerText = maxPages;
+			
+			if (maxPages > 0) {
+				loadPage(1); // Загружаем первую разрешенную страницу
+			} else {
+				document.getElementById('pageContainer').innerHTML = 
+					`<div style='padding:40px; text-align:center;'>
+						<h3>Текст документа не определен</h3>
+						<p>Возможно, документ содержит только титульный лист или слишком мало текста.</p>
+					 </div>`;
+			}
+		} catch (e) {
+			console.error("Ошибка:", e);
+		}
+	}	
+
+    initEditor();
+</script>
+</body>
+</html>

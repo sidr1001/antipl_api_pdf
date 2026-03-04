@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ filename }}</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:"Times New Roman",Times,serif;background:#525659}
+        .header{position:fixed;top:0;left:0;right:0;height:60px;background:#323639;border-bottom:1px solid #444;display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:1000;color:#fff}
+        .header-left{display:flex;align-items:center;gap:15px}
+        .logo{font-size:18px;font-weight:bold}
+        .doc-info{font-size:13px;color:#ccc}
+        .header-center{display:flex;gap:30px}
+        .stat{text-align:center}
+        .stat-value{font-size:18px;font-weight:bold}
+        .stat-value.orig{color:#4CAF50}
+        .stat-value.plag{color:#FF723A}
+        .stat-value.cit{color:#B2CF55}
+        .stat-label{font-size:10px;color:#999;text-transform:uppercase}
+        .header-right{font-size:14px;color:#ccc}
+        .doc{margin-top:60px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:20px}
+        .page{position:relative;width:210mm;min-height:297mm;padding:20mm 25mm;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,0.4)}
+        .page-num{position:absolute;top:10px;right:20px;font-size:11px;color:#999}
+        .text-layer{position:relative;z-index:1;font-size:12pt;line-height:1.5;color:#000}
+        .highlight-layer{position:absolute;top:20mm;left:25mm;right:25mm;bottom:20mm;z-index:2;pointer-events:none}
+        .highlight-rect{position:absolute;background:rgba(255,114,58,0.3);pointer-events:auto;cursor:pointer;border-radius:2px}
+        .highlight-rect.cit{background:rgba(178,207,85,0.4)}
+        .highlight-rect:hover{background:rgba(255,114,58,0.5)}
+        .highlight-rect.cit:hover{background:rgba(178,207,85,0.6)}
+        .badge{position:absolute;background:#FF723A;color:#fff;font-size:9px;font-weight:bold;padding:1px 4px;border-radius:2px;pointer-events:auto;cursor:pointer;z-index:3}
+        .badge.cit{background:#B2CF55}
+        p{margin:0 0 6pt 0;text-align:justify;text-indent:12.5mm}
+        h1{font-size:16pt;text-align:center;margin:12pt 0}
+        h2{font-size:14pt;margin:10pt 0}
+        table{width:100%;border-collapse:collapse;margin:10pt 0;font-size:11pt}
+        td,th{border:1px solid #000;padding:4pt 6pt}
+        ul,ol{margin:6pt 0 6pt 20pt}
+        .loading{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;text-align:center}
+        .spinner{border:3px solid rgba(255,255,255,0.3);border-top:3px solid #fff;border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;margin:0 auto 15px}
+        @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <div class="logo">📄 Антиплагиат</div>
+            <div class="doc-info">{{ filename }}</div>
+        </div>
+        <div class="header-center">
+            <div class="stat"><div class="stat-value orig">{{ orig }}%</div><div class="stat-label">Оригинальность</div></div>
+            <div class="stat"><div class="stat-value plag">{{ plag }}%</div><div class="stat-label">Заимствования</div></div>
+            <div class="stat"><div class="stat-value cit">{{ cit }}%</div><div class="stat-label">Цитирование</div></div>
+        </div>
+        <div class="header-right">Стр. <span id="cur">1</span> / {{ total }}</div>
+    </div>
+    <div class="doc" id="doc">
+        <div class="loading" id="loading"><div class="spinner"></div><div>Загрузка...</div></div>
+    </div>
+    <script>
+        const pages={{ pages|tojson }};
+        let currentPage=1;
+        function render(){
+            const d=document.getElementById('doc');
+            d.innerHTML='';
+            pages.forEach((p,i)=>{
+                const wrap=document.createElement('div');
+                wrap.className='page';
+                wrap.id='p'+i;
+                wrap.innerHTML='<div class="page-num">'+(i+1)+'</div>';
+                const txt=document.createElement('div');
+                txt.className='text-layer';
+                txt.innerHTML=p.text;
+                const hl=document.createElement('div');
+                hl.className='highlight-layer';
+                p.blocks.forEach(b=>{
+                    const r=document.createElement('div');
+                    r.className='highlight-rect '+(b.cit?'cit':'');
+                    r.style.left=(b.x)+'mm';
+                    r.style.top=(b.y)+'mm';
+                    r.style.width=(b.w)+'mm';
+                    r.style.height=(b.h)+'mm';
+                    hl.appendChild(r);
+                    const bd=document.createElement('span');
+                    bd.className='badge '+(b.cit?'cit':'');
+                    bd.textContent=b.sid;
+                    bd.style.left=(b.x+b.w)+'mm';
+                    bd.style.top=(b.y)+'mm';
+                    hl.appendChild(bd);
+                });
+                wrap.appendChild(txt);
+                wrap.appendChild(hl);
+                d.appendChild(wrap);
+            });
+        }
+        function updateCurrent(){
+            const y=window.scrollY+100;
+            for(let i=0;i<pages.length;i++){
+                const p=document.getElementById('p'+i);
+                if(p&&p.offsetTop<=y)currentPage=i+1;
+            }
+            document.getElementById('cur').textContent=currentPage;
+        }
+        window.onscroll=updateCurrent;
+        render();
+    </script>
+</body>
+</html>

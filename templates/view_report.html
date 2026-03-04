@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Просмотр отчета</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <style>
+        body { background: #525659; margin: 0; font-family: sans-serif; }
+        .toolbar { 
+            position: fixed; top: 0; width: 100%; background: #323639; 
+            color: white; padding: 10px; display: flex; justify-content: center; 
+            gap: 20px; z-index: 1000; box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        #pdf-container { margin-top: 60px; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        canvas { background: white; box-shadow: 0 0 10px rgba(0,0,0,0.5); margin-bottom: 20px; max-width: 100%; }
+        button { cursor: pointer; padding: 5px 15px; }
+        input { width: 40px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="toolbar">
+    <button id="prev-page">← Назад</button>
+    <span>Страница: <input type="number" id="page-num" value="1"> из <span id="page-count">0</span></span>
+    <button id="next-page">Вперед →</button>
+</div>
+
+<div id="pdf-container">
+    <canvas id="pdf-render"></canvas>
+</div>
+
+<script>
+    const url = "{{ pdf_url }}"; // Ссылка на файл из Flask
+    let pdfDoc = null, pageNum = 1, ctx = document.getElementById('pdf-render').getContext('2d');
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+    // Отрисовка страницы
+    const renderPage = num => {
+        pdfDoc.getPage(num).then(page => {
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.getElementById('pdf-render');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            page.render({ canvasContext: ctx, viewport }).promise.then(() => {
+                document.getElementById('page-num').value = num;
+            });
+        });
+    };
+
+    // Загрузка документа
+    pdfjsLib.getDocument(url).promise.then(pdfDoc_ => {
+        pdfDoc = pdfDoc_;
+        document.getElementById('page-count').textContent = pdfDoc.numPages;
+        renderPage(pageNum);
+    });
+
+    // Навигация
+    document.getElementById('prev-page').addEventListener('click', () => {
+        if (pageNum <= 1) return;
+        pageNum--;
+        renderPage(pageNum);
+    });
+
+    document.getElementById('next-page').addEventListener('click', () => {
+        if (pageNum >= pdfDoc.numPages) return;
+        pageNum++;
+        renderPage(pageNum);
+    });
+
+    document.getElementById('page-num').addEventListener('change', (e) => {
+        const num = parseInt(e.target.value);
+        if (num > 0 && num <= pdfDoc.numPages) {
+            pageNum = num;
+            renderPage(pageNum);
+        }
+    });
+</script>
+</body>
+</html>

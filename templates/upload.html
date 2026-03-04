@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Загрузка</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }
+        form { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; }
+        input[type="file"] { margin-bottom: 20px; }
+        input[type="submit"] { background: #007bff; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <form method="post" enctype="multipart/form-data">
+        <h2>Загрузите документ</h2>
+        <p>Поддерживаются: DOC, DOCX, ODT, RTF</p>
+        <input type="file" name="file" required>
+        <br>
+        <input type="submit" value="Проверить на плагиат">
+    </form>
+</body>
+</html>

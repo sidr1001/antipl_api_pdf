@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial; }
+
+        .page {
+            width: 800px;
+            margin: 30px auto;
+            padding: 40px;
+            border: 1px solid #ddd;
+            box-shadow: 0 0 10px #ccc;
+            background: white;
+        }
+
+        .plag {
+            background: rgba(255,114,58,0.4);
+        }
+
+        .citation {
+            background: rgba(178,207,85,0.4);
+        }
+    </style>
+</head>
+<body>
+
+<h2>Загрузка DOCX</h2>
+
+<form method="POST" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".docx">
+    <button type="submit">Загрузить</button>
+</form>
+
+{% if pages %}
+    {% for page in pages %}
+        <div class="page">
+            {{ page|safe }}
+        </div>
+    {% endfor %}
+{% endif %}
+
+</body>
+</html>

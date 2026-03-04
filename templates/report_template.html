@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Вывод отчета на печать</title>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap" rel="stylesheet"> 
+	<link href="http://t2.kurgau.ru/static/css/jquery-ui.min.css" rel="stylesheet" type="text/css">
+	<link href="http://t2.kurgau.ru/static/css/printUxNew.min.css" rel="stylesheet" type="text/css">	
+	<style>
+	.header .logo{width: 600px;}
+	.report-results__stats-grafic{width:200px;margin:0px 20px;}
+	.report-results__stats-percents{}
+	.report-results__stats-percents table td{width:190px;}
+	.report-results__terms{}
+	.report-doc-info{}
+	.report-doc-info h2{}
+	.report-doc-info table{width:100%}
+	.report-doc-info table tr{}
+	.report-doc-info table td{}
+	.report-doc-info table td div:not(:last-child){margin-bottom: 10px;}
+	.report-doc-info__comment{border:none}			
+	}				
+	.report-doc-info__comment {border-top: 1px solid rgba(0, 0, 0, 0.1)!important;padding-top: 15px;}	
+
+	/* 1. Добавляем "Clearfix" - защиту от схлопывания */
+    .header::after {
+        content: "";
+        display: table;
+        clear: both;
+    }
+
+    /* 3. Гарантируем, что текст ниже не наедет на шапку */
+    .report-results, .common-info, h1 {
+        clear: both;
+        display: block;
+    }	
+	.header img {border: 0 !important;background-color: #ffffff !important;}	
+	
+	</style>     
+</head>
+<body>
+    <div class="general">
+		{% if show_header %}
+		<div class="header">        
+			<div class="logo">
+
+			</div>	
+			<div class="qr-code-wrap">    				
+				<div class="qr-code-text">
+					Для скачивания отчета <br />воспользуйтесь QR кодом.                   
+				</div>
+				<div class="qr-code">
+					<img src="data:image/png;base64,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" alt="qr code">
+				</div>
+			</div>    
+        </div>
+        
+        <h1>Отчет о проверке</h1>
+    
+        <div class="common-info">           
+            <div><strong>Автор:</strong> {{ autor }}</div>
+            <div><strong>Проверяющий:</strong> {{ checker }}</div> 
+        </div>  
+        <div class="common-info">       
+            <div><strong>Название документа:</strong> {{ doc_name }}</div> 
+            <div><strong>Название организации:</strong> {{ vuz }}</div>          
+        </div>  
+		{% endif %}
+		
+        <div class="report-results">
+
+            <div class="report-results__title">
+                <h2>Результаты проверки</h2>
+            </div>
+            
+            <div class="report-results__stats">
+
+                <div class="report-results__stats-grafic">
+                    <img src="data:image/png;base64,{{ chart_image }}" class="chart-img" />
+                </div>  
+
+                <div class="report-results__stats-percents">
+                    <table>
+                        <tr>
+                            <td>
+                                <div class="plagiat">
+                                    <strong>Совпадения:</strong>
+                                    <div>
+                                        <i>{{ pz }}%</i>
+                                        <div class="percent-view">
+                                            <span><em style="width: {{ pz }}%"></em></span>
+                                        </div>
+                                    </div>
+                                </div>  
+                            </td>
+                            <td>
+                                <div class="original">
+                                    <strong>Оригинальность:</strong>
+                                    <div>
+                                        <i>{{ po }}%</i>
+                                        <div class="percent-view">
+                                            <span><em style="width: {{ po }}%"></em></span>
+                                        </div>
+                                    </div>
+                                </div>  
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="legal">
+                                    <strong>Цитирования:</strong>
+                                    <div>
+                                        <i>{{ pc }}%</i>
+                                        <div class="percent-view">
+                                            <span><em style="width: {{ pc }}%"></em></span>
+                                        </div>
+                                    </div>
+                                </div>  
+                            </td>
+							<td>
+								<div class="self-cite">
+									<strong>Самоцитирования:</strong>
+									<div>
+										<i>0%</i>
+										<div class="percent-view">
+											<span><em style="width: 0%"></em></span>
+										</div>
+									</div>
+								</div>	
+							</td>
+                        </tr> 
+                    </table>
+                </div>
+                <div class="report-results__stats-ai">
+                    <div class="ai-gen">
+                        <strong>ИИ-контент:</strong>
+                        <div>
+                            <i> {{ ai }}%</i>
+                            <div class="percent-view">
+                                <span><em style="width: {{ ai }}%"></em></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="report-results__stats-sum">«Совпадения», «Цитирования», «Самоцитирования», «Оригинальность» являются отдельными показателями, отображаются в процентах и в сумме дают 100%, что соответствует полному тексту проверяемого документа.</div>
+			            
+			<ul class="report-results__terms">
+                <li><strong>Совпадения</strong> — фрагменты проверяемого текста, полностью или частично сходные с найденными источниками, за исключением фрагментов, которые система отнесла к цитированию или самоцитированию. Показатель «Совпадения» – это доля фрагментов проверяемого текста, отнесенных к совпадениям, в общем объеме текста.</li>
+                <li><strong>Самоцитирования</strong> — фрагменты проверяемого текста, совпадающие или почти совпадающие с фрагментом текста источника, автором или соавтором которого является автор проверяемого документа. Показатель «Самоцитирования» – это доля фрагментов текста, отнесенных к самоцитированию, в общем объеме текста.</li>
+                <li><strong>Цитирования</strong> — фрагменты проверяемого текста, которые не являются авторскими, но которые система отнесла к корректно оформленным. К цитированиям относятся также шаблонные фразы; библиография; фрагменты текста, найденные модулем поиска «СПС Гарант: нормативно-правовая документация». Показатель «Цитирования» – это доля фрагментов проверяемого текста, отнесенных к цитированию, в общем объеме текста.</li>
+                <li><strong>Текстовое пересечение</strong> — фрагмент текста проверяемого документа, совпадающий или почти совпадающий с фрагментом текста источника.</li>
+                <li><strong>Источник</strong> — документ, проиндексированный в системе и содержащийся в модуле поиска, по которому проводится проверка.</li>
+                <li><strong>Оригинальный текст</strong> — фрагменты проверяемого текста, не обнаруженные ни в одном источнике и не отмеченные ни одним из модулей поиска. Показатель «Оригинальность» – это доля фрагментов проверяемого текста, отнесенных к оригинальному тексту, в общем объеме текста.</li>
+            </ul>
+            
+            <p class="report-results__sum">Обращаем Ваше внимание, что система находит текстовые совпадения проверяемого документа с проиндексированными в системе источниками. При этом система является вспомогательным инструментом, определение корректности и правомерности совпадений или цитирований, а также авторства текстовых фрагментов проверяемого документа остается в компетенции проверяющего.</p>            
+        
+        </div>
+        
+        <div class="report-doc-info">
+            <table>
+              <tr>
+                <td colspan="2">                    
+                   <h2>Информация о документе</h2>
+                <td>
+              </tr> 
+              <tr>
+                <td>
+                    <div><strong>Номер документа:</strong> {{ number_document }}</div>
+					<div><strong>Тип документа:</strong> Не указано</div>
+                    <div><strong>Дата проверки:</strong> {{ check_date }}</div>
+					<div><strong>Дата корректировки:</strong> Нет</div>					
+                </td>
+                <td>                            
+                    <div><strong>Количество страниц:</strong> {{ page_count }}</div>
+                    <div><strong>Cимволов в тексте:</strong> {{ char_count }}</div>
+                    <div><strong>Слов в тексте:</strong> {{ word_count }}</div>                       
+                    <div><strong>Число предложений:</strong> {{ sent_count }}</div>
+                </td>
+              </tr>
+			  <tr>
+				<td colspan="2">            
+					<div class="report-doc-info__comment"><strong>Комментарий:</strong> не указано</div>
+				<td>
+			  </tr>
+            </table>
+        </div>
+		
+        <div class="report-check-params">
+            <h2>Параметры проверки</h2>
+            
+            <div><strong>Выполнена проверка с учетом редактирования:</strong> Да</div>            
+            <div><strong>Выполнено распознавание текста (OCR):</strong> Нет</div>            
+            <div><strong>Выполнена проверка с учетом структуры:</strong> Нет</div>            
+          
+            <div class="report-check-params__modules" title="">                
+                <div><strong>Модули поиска:</strong> ИПС Адилет, Библиография, Сводная коллекция ЭБС, Интернет Плюс, Сводная коллекция РГБ, Переводные заимствования (RuEn), Переводные заимствования по eLIBRARY.RU (EnRu), Переводные заимствования по Интернету (EnRu), Переводные заимствования издательства Wiley (RuEn), Публикации eLIBRARY, СПС ГАРАНТ, Медицина, Диссертации НББ, Перефразирования по eLIBRARY.RU, Перефразирования по Интернету, Патенты СССР, РФ, СНГ, СМИ России и СНГ, Шаблонные фразы, Кольцо вузов, Издательство Wiley, Переводные заимствования, Коллекция НБУ, Перефразирования по коллекции издательства Wiley, Перефразирования по СПС ГАРАНТ: аналитика, СПС ГАРАНТ: аналитика, СПС ГАРАНТ: нормативно-правовая документация, Интернет, Перефразированные заимствования по коллекции Интернет в английском сегменте, Рувики, IEEE, Профессиональная лексика, Перефразирования по коллекции IEEE, Публикации РГБ (переводы и перефразирования), Публикации РГБ, Переводные заимствования по коллекции Интернет в английском сегменте, Перефразированные заимствования по коллекции Интернет в русском сегменте, Переводные заимствования по коллекции Гарант: аналитика, Переводные заимствования по коллекции Интернет в русском сегменте, Публикации eLIBRARY (переводы и перефразирования), Собственная коллекция компании</div>				
+            </div>			
+        </div>		
+        
+        <div class="sources">
+            <h2>Источники</h2>
+            <div class="sources-header">
+                <table>
+                    <thead>                 
+                        <tr>
+							<th data-sort="num">№</th>
+							<th class="percent-col">Доля<br>в тексте</th>
+							<th class="percent-by-text-col">Доля<br>в отчете</th>
+							<th class="name-col">Источник</th>
+							<th class="date-col">Актуален на</th>
+							<th class="collections-col">Модуль поиска</th>
+							<th class="comment-col">Комментарий</th>
+                        </tr>
+                    </thead>
+                </table>
+            </div>
+            <div class="sources-list">
+                <table>					
+                    <tbody>
+                        {{ urls_list | safe }}
+                    </tbody>
+                </table>
+            </div>
+        </div>      
+        
+        <div class="page-break"></div>
+    </div>                                    
+</body>
+</html>

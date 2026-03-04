@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ filename }}</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:"Times New Roman",Times,serif;background:#525659;height:100vh;overflow:hidden}
+        .header{background:#323639;border-bottom:1px solid #444;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;height:50px;color:#fff}
+        .header-left{display:flex;align-items:center;gap:15px}
+        .logo{font-size:18px;font-weight:bold}
+        .doc-info{font-size:13px;color:#ccc}
+        .header-stats{display:flex;gap:20px}
+        .stat-item{text-align:center}
+        .stat-value{font-size:16px;font-weight:bold}
+        .stat-value.original{color:#4CAF50}
+        .stat-value.plagiat{color:#FF723A}
+        .stat-value.citation{color:#B2CF55}
+        .stat-label{font-size:10px;color:#999;text-transform:uppercase}
+        .main-container{display:flex;height:calc(100vh - 50px)}
+        .content-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
+        .toolbar{background:#3a3f44;border-bottom:1px solid #444;padding:8px 20px;display:flex;gap:15px;align-items:center;color:#fff;font-size:13px}
+        .toolbar label{display:flex;align-items:center;gap:5px;cursor:pointer}
+        .doc-scroller{flex:1;overflow-y:auto;overflow-x:hidden;padding:20px;background:#525659}
+        .doc-container{display:flex;flex-direction:column;align-items:center;gap:20px}
+        .page-wrapper{position:relative;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,0.4);width:210mm;min-height:297mm;padding:20mm 25mm}
+        .text-layer{position:relative;z-index:1;font-size:12pt;line-height:1.5;color:#000}
+        .highlight-layer{position:absolute;top:20mm;left:25mm;right:25mm;bottom:20mm;z-index:2;pointer-events:none}
+        .highlight-layer.has-content{pointer-events:auto}
+        .highlight-rect{position:absolute;background:rgba(255,114,58,0.3);cursor:pointer;pointer-events:auto;border-radius:2px}
+        .highlight-rect.citation{background:rgba(178,207,85,0.4)}
+        .highlight-rect:hover{background:rgba(255,114,58,0.5)}
+        .highlight-rect.citation:hover{background:rgba(178,207,85,0.6)}
+        .highlight-rect.active{background:rgba(255,235,59,0.7)!important;outline:2px solid #FF9800}
+        .source-badge{position:absolute;background:#FF723A;color:#fff;font-size:9px;font-weight:bold;padding:2px 5px;border-radius:3px;cursor:pointer;pointer-events:auto;z-index:3;margin-left:3px}
+        .source-badge.citation{background:#B2CF55}
+        .sidebar{width:350px;background:#fff;border-left:1px solid #ddd;display:flex;flex-direction:column;overflow:hidden}
+        .sidebar-header{padding:15px;border-bottom:1px solid #eee;background:#fafafa}
+        .sidebar-title{font-size:16px;font-weight:600;margin-bottom:10px}
+        .filter-tabs{display:flex;gap:5px}
+        .filter-tab{padding:5px 10px;border:1px solid #ddd;background:#fff;border-radius:3px;font-size:12px;cursor:pointer}
+        .filter-tab.active{background:#2196F3;color:#fff;border-color:#2196F3}
+        .sources-list{flex:1;overflow-y:auto;padding:10px}
+        .source-item{padding:12px;border:1px solid #eee;border-radius:6px;margin-bottom:8px;cursor:pointer;transition:all .2s}
+        .source-item:hover{box-shadow:0 2px 5px rgba(0,0,0,0.1)}
+        .source-item.active{border-color:#2196F3;background:#E3F2FD}
+        .source-item.disabled{opacity:.4}
+        .source-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+        .source-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#FF723A;color:#fff;border-radius:3px;font-size:11px;font-weight:bold}
+        .source-num.citation{background:#B2CF55}
+        .source-percent{font-size:15px;font-weight:bold;color:#333}
+        .source-url{font-size:12px;color:#2196F3;text-decoration:none;word-break:break-all;display:block;margin-bottom:5px;line-height:1.3}
+        .source-meta{font-size:11px;color:#999;display:flex;justify-content:space-between}
+        .source-toggle{display:flex;align-items:center;gap:8px}
+        .toggle-checkbox{width:16px;height:16px;cursor:pointer}
+        .block-nav{position:fixed;right:370px;top:50%;transform:translateY(-50%);background:rgba(50,54,57,0.95);border-radius:6px;padding:4px;display:flex;flex-direction:column;gap:4px;z-index:100}
+        .block-nav button{width:32px;height:32px;border:none;background:rgba(255,255,255,0.1);color:#fff;cursor:pointer;border-radius:3px;font-size:16px}
+        .block-nav button:hover{background:rgba(255,255,255,0.2)}
+        .tooltip{position:fixed;background:rgba(0,0,0,0.9);color:#fff;padding:8px 12px;border-radius:4px;font-size:12px;z-index:10000;max-width:300px;display:none;pointer-events:none}
+        .loading-container{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;color:#fff}
+        .spinner{border:3px solid rgba(255,255,255,0.3);border-top:3px solid #fff;border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;margin-bottom:15px}
+        @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+        /* Стили для сохранения оформления документа */
+        .text-layer h1{font-size:16pt;font-weight:bold;margin:12pt 0 6pt 0;text-align:center}
+        .text-layer h2{font-size:14pt;font-weight:bold;margin:10pt 0 5pt 0}
+        .text-layer h3{font-size:12pt;font-weight:bold;margin:8pt 0 4pt 0}
+        .text-layer p{margin:0 0 6pt 0;text-align:justify;text-indent:12.5mm}
+        .text-layer p:first-of-type{text-indent:0}
+        .text-layer table{width:100%;border-collapse:collapse;margin:8pt 0;font-size:11pt}
+        .text-layer td,.text-layer th{border:1px solid #000;padding:4pt 6pt}
+        .text-layer th{background:#f0f0f0;font-weight:bold}
+        .text-layer ul,.text-layer ol{margin:6pt 0 6pt 20pt}
+        .text-layer li{margin-bottom:3pt}
+        .text-layer .center{text-align:center}
+        .text-layer .right{text-align:right}
+        .text-layer .bold{font-weight:bold}
+        .text-layer .italic{font-style:italic}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <div class="logo">📄 Антиплагиат</div>
+            <div class="doc-info">{{ filename }} | {{ author }} | {{ date }}</div>
+        </div>
+        <div class="header-stats">
+            <div class="stat-item"><div class="stat-value original">{{ stats.original }}%</div><div class="stat-label">Оригинальность</div></div>
+            <div class="stat-item"><div class="stat-value plagiat">{{ stats.plagiat }}%</div><div class="stat-label">Заимствования</div></div>
+            <div class="stat-item"><div class="stat-value citation">{{ stats.citation }}%</div><div class="stat-label">Цитирование</div></div>
+        </div>
+    </div>
+    <div class="main-container">
+        <div class="content-area">
+            <div class="toolbar">
+                <label><input type="checkbox" id="showAllSources" checked onchange="toggleAllSources()"> Показывать выделения</label>
+            </div>
+            <div class="doc-scroller" id="docScroller">
+                <div class="loading-container" id="loading"><div class="spinner"></div><div>Загрузка...</div></div>
+                <div class="doc-container" id="docContainer" style="display:none"></div>
+            </div>
+        </div>
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">Источники</div>
+                <div class="filter-tabs">
+                    <button class="filter-tab active" onclick="filterSources('all')">Все</button>
+                    <button class="filter-tab" onclick="filterSources('plagiat')">Заимств.</button>
+                    <button class="filter-tab" onclick="filterSources('citation')">Цитаты</button>
+                </div>
+            </div>
+            <div class="sources-list" id="sourcesList"></div>
+        </div>
+    </div>
+    <div class="block-nav" id="blockNav" style="display:none">
+        <button onclick="prevBlock()">↑</button>
+        <button onclick="nextBlock()">↓</button>
+    </div>
+    <div class="tooltip" id="tooltip"></div>
+    <script>
+        let activeSources=new Set,allBlocks=[],currentBlockIndex=-1,uid='{{ uid }}',filename='{{ filename }}',totalPages=0;
+        async function loadDocInfo(){try{const r=await fetch(`/api/get_doc_info/${uid}/${filename}`);const d=await r.json();totalPages=d.total_pages}catch(e){console.error(e)}}
+        async function loadSources(){try{const r=await fetch(`/api/get_sources/${uid}/${filename}`);const s=await r.json();s.forEach((_,i)=>activeSources.add(i+1));renderSources(s)}catch(e){console.error(e)}}
+        function renderSources(sources){const c=document.getElementById('sourcesList');c.innerHTML='';sources.forEach((s,i)=>{const id=i+1,active=activeSources.has(id),div=document.createElement('div');div.className=`source-item ${active?'':'disabled'}`;div.dataset.sourceId=id;div.dataset.type=s.is_citation?'citation':'plagiat';div.innerHTML=`<div class="source-header"><div class="source-toggle"><input type="checkbox" class="toggle-checkbox" ${active?'checked':''} onchange="toggleSource(${id},this.checked)"><span class="source-num ${s.is_citation?'citation':''}">${id}</span></div><span class="source-percent">${s.plagiat}%</span></div><a href="${s.url}" target="_blank" class="source-url" onclick="event.stopPropagation()">${s.url.length>50?s.url.substring(0,50)+'...':s.url}</a><div class="source-meta"><span>${s.module||'Интернет'}</span></div>`;div.onclick=e=>{if(e.target.tagName!=='INPUT'&&e.target.tagName!=='A')highlightSource(id)};c.appendChild(div)})}
+        async function loadAllPages(){document.getElementById('loading').style.display='none';document.getElementById('docContainer').style.display='flex';const c=document.getElementById('docContainer');for(let i=0;i<totalPages;i++)await loadPage(i,c);updateBlockNav()}
+        async function loadPage(pageNum,container){try{const r=await fetch(`/api/get_page_formatted/${uid}/${filename}/${pageNum}`);const d=await r.json();const w=document.createElement('div');w.className='page-wrapper';w.id=`page-${pageNum}`;const t=document.createElement('div');t.className='text-layer';t.innerHTML=d.html;const h=document.createElement('div');h.className='highlight-layer has-content';renderBlocks(h,d.blocks,pageNum);w.appendChild(t);w.appendChild(h);container.appendChild(w)}catch(e){console.error(`Page ${pageNum}:`,e)}}
+        function renderBlocks(container,blocks,pageNum){if(!blocks)return;blocks.forEach(b=>{if(!activeSources.has(b.source_id))return;const r=document.createElement('div');r.className=`highlight-rect ${b.is_citation?'citation':''}`;r.style.left=b.x+'px';r.style.top=b.y+'px';r.style.width=b.width+'px';r.style.height=b.height+'px';r.dataset.sourceId=b.source_id;r.onmouseenter=e=>showTooltip(e,b);r.onmouseleave=hideTooltip;r.onclick=()=>selectSource(b.source_id);container.appendChild(r);allBlocks.push({element:r,sourceId:b.source_id,pageNum:pageNum,y:b.y+pageNum*297});if(b.show_badge){const badge=document.createElement('div');badge.className=`source-badge ${b.is_citation?'citation':''}`;badge.textContent=b.source_id;badge.style.left=(b.x+b.width)+'px';badge.style.top=b.y+'px';badge.onclick=()=>selectSource(b.source_id);container.appendChild(badge)}})}
+        function showTooltip(e,b){const t=document.getElementById('tooltip');t.innerHTML=`[${b.source_id}] ${b.is_citation?'Цитирование':'Заимствование'}`;t.style.display='block';t.style.left=e.clientX+'px';t.style.top=(e.clientY-30)+'px'}function hideTooltip(){document.getElementById('tooltip').style.display='none'}
+        function highlightSource(id){document.querySelectorAll('.highlight-rect.active').forEach(e=>e.classList.remove('active'));let f;document.querySelectorAll(`[data-source-id="${id}"]`).forEach(e=>{if(e.classList.contains('highlight-rect')){e.classList.add('active');if(!f)f=e}});if(f)f.scrollIntoView({behavior:'smooth',block:'center'});document.querySelectorAll('.source-item').forEach(e=>e.classList.remove('active'));const s=document.querySelector(`.source-item[data-source-id="${id}"]`);if(s)s.classList.add('active')}
+        function toggleSource(id,on){if(on)activeSources.add(id);else activeSources.delete(id);document.querySelectorAll(`[data-source-id="${id}"]`).forEach(e=>e.style.display=on?'':'none');const i=document.querySelector(`.source-item[data-source-id="${id}"]`);if(i)i.classList.toggle('disabled',!on)}
+        function toggleAllSources(){const on=document.getElementById('showAllSources').checked;if(on)document.querySelectorAll('.source-item').forEach((_,i)=>activeSources.add(i+1));else activeSources.clear();document.querySelectorAll('.toggle-checkbox').forEach((c,i)=>c.checked=on);document.querySelectorAll('.highlight-rect,.source-badge').forEach(e=>e.style.display=on?'':'none');document.querySelectorAll('.source-item').forEach(i=>i.classList.toggle('disabled',!on))}
+        function filterSources(t){document.querySelectorAll('.filter-tab').forEach(b=>b.classList.remove('active'));event.target.classList.add('active');document.querySelectorAll('.source-item').forEach(i=>i.style.display=t==='all'||i.dataset.type===t?'block':'none')}
+        function updateBlockNav(){document.getElementById('blockNav').style.display=allBlocks.length?'flex':'none'}function nextBlock(){if(!allBlocks.length)return;currentBlockIndex=(currentBlockIndex+1)%allBlocks.length;scrollToBlock(currentBlockIndex)}function prevBlock(){if(!allBlocks.length)return;currentBlockIndex=currentBlockIndex<=0?allBlocks.length-1:currentBlockIndex-1;scrollToBlock(currentBlockIndex)}function scrollToBlock(i){const b=allBlocks[i];if(b&&b.element)b.element.scrollIntoView({behavior:'smooth',block:'center'})}function selectSource(id){highlightSource(id)}
+        document.addEventListener('DOMContentLoaded',async()=>{await loadDocInfo();await loadSources();await loadAllPages()});
+    </script>
+</body>
+</html>
