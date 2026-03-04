@@ -94,6 +94,30 @@ def parse_compressed_indices(words_str):
             except: pass
     return indices
 
+def safe_percent(value, default=0.0):
+    """Безопасно приводит значение процента к float."""
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    raw = str(value).strip().replace('%', '').replace(',', '.')
+    if not raw:
+        return default
+
+    try:
+        return float(raw)
+    except:
+        return default
+
+
+def get_api_metric(api_data, keys, default=0.0):
+    """Берет первый найденный ключ из api_data и приводит к float."""
+    for key in keys:
+        if key in api_data and api_data.get(key) is not None:
+            return safe_percent(api_data.get(key), default)
+    return default
+
 def save_file_unique(content, filename, base_folder="uploads"):
     """
     Сохраняет файл в структуру папок /uploads/{uid}/filename
@@ -1102,6 +1126,10 @@ def api_highlight():
         if api_data is None:
             return jsonify({"error": "No json provided"}), 400
 
+        # Сохраняем исходные API-данные для HTML-превью /report и /preview-html
+        with open(os.path.join(session_dir, 'api_data.json'), 'w', encoding='utf-8') as f:
+            json.dump(api_data, f, ensure_ascii=False)
+
         # 5. Запускаем генерацию, передавая UID
         final_pdf_name = generate_full_report(filepath, api_data, filename, uid)
         
@@ -1311,9 +1339,20 @@ def report_view(uid, filename):
         with open(json_path, 'r', encoding='utf-8') as f:
             api_data = json.load(f)
     
-    unique = float(api_data.get('unique', 0))
-    pc = float(api_data.get('pc', 0))
-    plag = 100 - unique - pc
+    unique = get_api_metric(api_data, ['unique', 'originality', 'original', 'orig'], default=0.0)
+    pc = get_api_metric(api_data, ['pc', 'citation', 'cit'], default=0.0)
+
+    # Если плагиат/заимствования не пришли отдельным полем, считаем остатком
+    plag_raw = None
+    for key in ['plag', 'plagiat', 'borrowed']:
+        if key in api_data and api_data.get(key) is not None:
+            plag_raw = api_data.get(key)
+            break
+
+    if plag_raw is None:
+        plag = 100 - unique - pc
+    else:
+        plag = safe_percent(plag_raw, 0.0)
     
     # Карта слов к источникам
     word_to_source = {}
