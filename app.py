@@ -1326,55 +1326,94 @@ def report_view(uid, filename):
             citation_id = sid
         words_str = u.get('clean_words_str', u.get('words', ''))
         for widx in parse_compressed_indices(words_str):
-            if widx not in word_to_source:
-                word_to_source[widx] = {'sid': sid, 'cit': sid == citation_id}
+            # Сохраняем как есть: индекс источника для слова
+            word_to_source[widx] = {'sid': sid, 'cit': sid == citation_id}
     
-    # Обрабатываем PDF
+    # Обрабатываем PDF (версия с подсветкой уже содержит те же текстовые координаты)
     doc = fitz.open(pdf_path)
-    start_page = 1 if len(doc) > 1 else 0
+    start_page = 0
+
+    # Собираем список слов по той же логике, что при генерации PDF-окраса
+    global_word_list = []
+    MARGIN_TOP = 80
+    MARGIN_BOTTOM = 80
+
+    for page_num, page in enumerate(doc):
+        try:
+            tables = page.find_tables()
+            table_bboxes = [fitz.Rect(tab.bbox) for tab in tables]
+        except:
+            table_bboxes = []
+
+        page_height = page.rect.height
+        words_on_page = page.get_text("words")
+        words_on_page.sort(key=lambda w: (round(w[1], 1), w[0]))
+
+        for w in words_on_page:
+            word_rect = fitz.Rect(w[:4])
+            is_excluded = False
+
+            if word_rect.y1 < MARGIN_TOP or word_rect.y0 > (page_height - MARGIN_BOTTOM):
+                is_excluded = True
+            if not is_excluded:
+                for table_rect in table_bboxes:
+                    if table_rect.intersects(word_rect):
+                        is_excluded = True
+                        break
+
+            global_word_list.append({
+                'page': page_num,
+                'rect': word_rect,
+                'skip_highlight': is_excluded,
+            })
+
+    # Рендер страниц + блоков для HTML-превью
     pages = []
-    cumulative_word_offset = 0
-    
+    page_blocks_map = {i: [] for i in range(start_page, len(doc))}
+
+    for i, word_data in enumerate(global_word_list):
+        if word_data['page'] < start_page or word_data['skip_highlight']:
+            continue
+
+        source_meta = word_to_source.get(i)
+        if not source_meta:
+            continue
+
+        rect = word_data['rect']
+        final_rect = fitz.Rect(rect.x0, rect.y0, rect.x1 + 2, rect.y1)
+
+        # Та же логика объединения соседних слов в строке
+        if i + 1 < len(global_word_list):
+            next_w = global_word_list[i + 1]
+            next_src = word_to_source.get(i + 1)
+            if (
+                next_src
+                and next_src['sid'] == source_meta['sid']
+                and not next_w['skip_highlight']
+                and next_w['page'] == word_data['page']
+                and abs(next_w['rect'].y0 - rect.y0) < 5
+            ):
+                final_rect = fitz.Rect(rect.x0, rect.y0, next_w['rect'].x0, rect.y1)
+
+        # Перевод координат в мм для шаблона report.html
+        x = final_rect.x0 * 25.4 / 72 - 25
+        y = final_rect.y0 * 25.4 / 72 - 20
+        ww = (final_rect.x1 - final_rect.x0) * 25.4 / 72
+        hh = (final_rect.y1 - final_rect.y0) * 25.4 / 72
+
+        page_blocks_map[word_data['page']].append({
+            'x': x,
+            'y': y,
+            'w': ww,
+            'h': hh,
+            'sid': source_meta['sid'],
+            'cit': source_meta['cit'],
+        })
+
     for page_num in range(start_page, len(doc)):
         page = doc[page_num]
         text = page.get_text("html")
-        words = page.get_text("words")
-        words.sort(key=lambda w: (round(w[1], 1), w[0]))
-        
-        # Группируем в блоки
-        blocks = []
-        current = None
-        
-        for i, w in enumerate(words):
-            gidx = cumulative_word_offset + i
-            m = word_to_source.get(gidx)
-            if not m:
-                if current:
-                    blocks.append(current)
-                    current = None
-                continue
-            
-            # Координаты в мм относительно области контента
-            x = w[0] * 25.4 / 72 - 25  # минус левое поле 25мм
-            y = w[1] * 25.4 / 72 - 20  # минус верхнее поле 20мм
-            ww = (w[2] - w[0]) * 25.4 / 72
-            hh = (w[3] - w[1]) * 25.4 / 72
-            
-            # Продолжаем блок если та же строка
-            if current and current['sid'] == m['sid'] and abs(current['y'] - y) < 3:
-                current['w'] = max(current['w'], x + ww - current['x'])
-                current['h'] = max(current['h'], hh)
-            else:
-                if current:
-                    blocks.append(current)
-                current = {'x': x, 'y': y, 'w': ww, 'h': hh, 'sid': m['sid'], 'cit': m['cit']}
-        
-        if current:
-            blocks.append(current)
-        
-        pages.append({'text': text, 'blocks': blocks})
-        cumulative_word_offset += len(words)
-    
+        pages.append({'text': text, 'blocks': page_blocks_map.get(page_num, [])})
     doc.close()
     
     return render_template('report.html',
