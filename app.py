@@ -1333,7 +1333,7 @@ def report_view(uid, filename):
     doc = fitz.open(pdf_path)
     start_page = 1 if len(doc) > 1 else 0
     pages = []
-    words_per_page = 400
+    cumulative_word_offset = 0
     
     for page_num in range(start_page, len(doc)):
         page = doc[page_num]
@@ -1341,14 +1341,12 @@ def report_view(uid, filename):
         words = page.get_text("words")
         words.sort(key=lambda w: (round(w[1], 1), w[0]))
         
-        base_idx = (page_num - start_page) * words_per_page
-        
         # Группируем в блоки
         blocks = []
         current = None
         
         for i, w in enumerate(words):
-            gidx = base_idx + i
+            gidx = cumulative_word_offset + i
             m = word_to_source.get(gidx)
             if not m:
                 if current:
@@ -1375,6 +1373,7 @@ def report_view(uid, filename):
             blocks.append(current)
         
         pages.append({'text': text, 'blocks': blocks})
+        cumulative_word_offset += len(words)
     
     doc.close()
     
