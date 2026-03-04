@@ -1108,10 +1108,14 @@ def api_highlight():
         # 6. Формируем НОВУЮ ссылку на скачивание
         # Теперь передаем и filename, и uid
         download_url = url_for('download_result', uid=uid, filename=final_pdf_name, _external=True)
+        preview_url = url_for('preview_result', uid=uid, filename=final_pdf_name, _external=True)
+        preview_html_url = url_for('preview_html_result', uid=uid, filename=final_pdf_name, _external=True)
         
         return jsonify({
             "status": "success", 
             "download_url": download_url,
+            "preview_url": preview_url,
+            "preview_html_url": preview_html_url,
             "uid": uid
         })
 
@@ -1182,6 +1186,29 @@ def _index():
         # as_attachment=True, 
         # download_name=filename 
     # ) 
+
+@app.route('/preview-html/<uid>/<filename>')
+def preview_html_result(uid, filename):
+    """
+    Просмотр HTML-оригинала (до конвертации в PDF).
+    Использует debug_cover.html, который формируется при сборке отчета.
+    """
+    directory = os.path.join(UPLOAD_FOLDER, uid)
+
+    if not os.path.exists(directory):
+        return "File not found (bad uid)", 404
+
+    html_path = os.path.join(directory, 'debug_cover.html')
+    if not os.path.exists(html_path):
+        return "HTML preview not found", 404
+
+    return send_file(
+        html_path,
+        as_attachment=False,
+        download_name=f"{os.path.splitext(filename)[0]}_cover.html",
+        mimetype='text/html; charset=utf-8'
+    )
+
 
 @app.route('/preview/<uid>/<filename>')
 def preview_result(uid, filename):
