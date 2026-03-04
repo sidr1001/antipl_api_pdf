@@ -1183,6 +1183,29 @@ def _index():
         # download_name=filename 
     # ) 
 
+@app.route('/preview/<uid>/<filename>')
+def preview_result(uid, filename):
+    """
+    Просмотр итогового PDF в браузере (тот же файл, что уходит на выгрузку).
+    Ничего не меняет в текущем механизме скачивания.
+    """
+    directory = os.path.join(UPLOAD_FOLDER, uid)
+
+    if not os.path.exists(directory):
+        return "File not found (bad uid)", 404
+
+    file_path = os.path.join(directory, filename)
+    if not os.path.exists(file_path):
+        return "File not found", 404
+
+    return send_file(
+        file_path,
+        as_attachment=False,
+        download_name=filename,
+        mimetype='application/pdf'
+    )
+
+
 @app.route('/download/<uid>/<filename>')
 def download_result(uid, filename):
     """
