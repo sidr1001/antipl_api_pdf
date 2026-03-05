@@ -6,16 +6,11 @@
     <style>
         html,body{margin:0;padding:0}
         *{box-sizing:border-box}
-        body{font-family:"Times New Roman",Times,serif;background:#525659}
-        .header{position:fixed;top:0;left:0;right:0;height:60px;background:#323639;border-bottom:1px solid #444;display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:1000;color:#fff}
-        .header-center{display:flex;gap:30px}
-        .stat{text-align:center}.stat-value{font-size:18px;font-weight:bold}
-        .stat-value.orig{color:#4CAF50}.stat-value.plag{color:#FF723A}.stat-value.cit{color:#B2CF55}
-        .stat-label{font-size:10px;color:#999;text-transform:uppercase}
-        .doc{margin-top:60px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:20px}
-        .page{position:relative;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.4)}
+        body{background:#fff}
+.doc{margin:0;padding:0;display:flex;flex-direction:column;align-items:flex-start;gap:0}
+        .page{position:relative;background:#fff;box-shadow:none}
         .visual-layer{position:absolute;inset:0;z-index:1;overflow:hidden}
-        .visual-layer img{width:100%;height:100%;display:block}
+        .visual-layer img{width:100%;height:100%;display:block;image-rendering:auto}
         .highlight-layer{position:absolute;inset:0;z-index:2;pointer-events:none}
         .highlight-rect{position:absolute;background:rgba(255,114,58,.3);border-radius:2px}
         .highlight-rect.cit{background:rgba(178,207,85,.4)}
@@ -24,15 +19,6 @@
     </style>
 </head>
 <body>
-<div class="header">
-    <div>📄 {{ filename }} (точный HTML preview)</div>
-    <div class="header-center">
-        <div class="stat"><div class="stat-value orig">{{ orig }}%</div><div class="stat-label">Оригинальность</div></div>
-        <div class="stat"><div class="stat-value plag">{{ plag }}%</div><div class="stat-label">Заимствования</div></div>
-        <div class="stat"><div class="stat-value cit">{{ cit }}%</div><div class="stat-label">Цитирование</div></div>
-    </div>
-    <div>Страниц: {{ total }}</div>
-</div>
 <div class="doc">
     {% for p in pages %}
     <div class="page" style="width:{{ p.w }}pt;height:{{ p.h }}pt;">
