@@ -738,6 +738,7 @@ def generate_full_report(filepath, api_data, original_filename, uid):
     # ==========================================
     urls = api_data.get('urls', [])
     target_pc = float(pc)
+    source_char_count = safe_percent(api_data.get('char_count', 0), 0.0)
 
     # 1. Функция для выделения САМОГО ДЛИННОГО непрерывного куска
     def get_longest_block(indices_set):
@@ -770,7 +771,7 @@ def generate_full_report(filepath, api_data, original_filename, uid):
     citation_idx = -1
 
     # Включаем логику поиска цитаты ТОЛЬКО если ссылок МНОГО (> 1)
-    if len(urls) > 1 and target_pc > 0:
+    if len(urls) > 1 and target_pc > 0 and source_char_count > 5000:
         
         # А. Ищем, может PHP прислал флаг (но мы его стерли выше, так что смотрим raw_data если надо, 
         # но проще искать заново или сохранить состояние).
@@ -830,7 +831,7 @@ def generate_full_report(filepath, api_data, original_filename, uid):
             # === ПЛАГИАТ (Оранжевый, много кусков) ===
             # Если ссылок всего 1, мы 100% попадем сюда.
             current_words_set = current_words_set - used_words_global
-            final_words_list = filter_isolated_words(current_words_set, min_sequence=9)
+            final_words_list = sorted(current_words_set)
 
         if not final_words_list:
             u['clean_words_str'] = "" 
@@ -1126,12 +1127,13 @@ def api_highlight():
         if api_data is None:
             return jsonify({"error": "No json provided"}), 400
 
-        # Сохраняем исходные API-данные для HTML-превью /report и /preview-html
-        with open(os.path.join(session_dir, 'api_data.json'), 'w', encoding='utf-8') as f:
-            json.dump(api_data, f, ensure_ascii=False)
-
         # 5. Запускаем генерацию, передавая UID
         final_pdf_name = generate_full_report(filepath, api_data, filename, uid)
+
+        # Сохраняем ИТОГОВЫЕ API-данные (после очистки/назначения цитирования)
+        # для HTML-превью /report и /preview-html
+        with open(os.path.join(session_dir, 'api_data.json'), 'w', encoding='utf-8') as f:
+            json.dump(api_data, f, ensure_ascii=False)
         
         # 6. Формируем НОВУЮ ссылку на скачивание
         # Теперь передаем и filename, и uid
