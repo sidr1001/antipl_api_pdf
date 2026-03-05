@@ -1140,12 +1140,14 @@ def api_highlight():
         download_url = url_for('download_result', uid=uid, filename=final_pdf_name, _external=True)
         preview_url = url_for('preview_result', uid=uid, filename=final_pdf_name, _external=True)
         preview_html_url = url_for('preview_html_result', uid=uid, filename=final_pdf_name, _external=True)
+        preview_html_accurate_url = url_for('preview_html_accurate_result', uid=uid, filename=final_pdf_name, _external=True)
         
         return jsonify({
             "status": "success", 
             "download_url": download_url,
             "preview_url": preview_url,
             "preview_html_url": preview_html_url,
+            "preview_html_accurate_url": preview_html_accurate_url,
             "uid": uid
         })
 
@@ -1323,6 +1325,129 @@ def upload():
     
     # Редирект на просмотр
     return redirect(url_for('report_view', uid=uid, filename=final_pdf))
+
+
+@app.route('/preview-html-accurate/<uid>/<filename>')
+def preview_html_accurate_result(uid, filename):
+    """Отдельный HTML-превью с альтернативной логикой позиционирования/индексации."""
+    directory = os.path.join(UPLOAD_FOLDER, uid)
+    if not os.path.exists(directory):
+        return "File not found (bad uid)", 404
+    return redirect(url_for('report_view_accurate', uid=uid, filename=filename))
+
+
+@app.route('/report-accurate/<uid>/<filename>')
+def report_view_accurate(uid, filename):
+    """Альтернативный HTML-рендер подсветки: координаты в pt и индексация только по не-пропущенным словам."""
+    json_path = os.path.join(UPLOAD_FOLDER, uid, 'api_data.json')
+    name_without_ext = os.path.splitext(filename)[0]
+    pdf_path = os.path.join(UPLOAD_FOLDER, uid, f"{name_without_ext}_highlighted.pdf")
+
+    if not os.path.exists(pdf_path):
+        return "PDF not found", 404
+
+    api_data = {}
+    if os.path.exists(json_path):
+        with open(json_path, 'r', encoding='utf-8') as f:
+            api_data = json.load(f)
+
+    unique = get_api_metric(api_data, ['unique', 'originality', 'original', 'orig'], default=0.0)
+    pc = get_api_metric(api_data, ['pc', 'citation', 'cit'], default=0.0)
+    plag = safe_percent(api_data.get('plag', api_data.get('plagiat', 100 - unique - pc)), 100 - unique - pc)
+
+    word_to_source = {}
+    urls = api_data.get('urls', [])
+    citation_id = None
+    for idx, u in enumerate(urls):
+        sid = idx + 1
+        if u.get('is_citation'):
+            citation_id = sid
+        words_str = u.get('clean_words_str', u.get('words', ''))
+        for widx in parse_compressed_indices(words_str):
+            word_to_source[widx] = {'sid': sid, 'cit': sid == citation_id}
+
+    doc = fitz.open(pdf_path)
+    pages = []
+    MARGIN_TOP = 80
+    MARGIN_BOTTOM = 80
+
+    global_filtered_idx = 0
+
+    for page_num, page in enumerate(doc):
+        text = page.get_text("html")
+        words = page.get_text("words")
+        words.sort(key=lambda w: (round(w[1], 1), w[0]))
+
+        try:
+            tables = page.find_tables()
+            table_bboxes = [fitz.Rect(tab.bbox) for tab in tables]
+        except:
+            table_bboxes = []
+
+        page_height = page.rect.height
+        blocks = []
+        current = None
+
+        for i, w in enumerate(words):
+            rect = fitz.Rect(w[:4])
+            skip = False
+            if rect.y1 < MARGIN_TOP or rect.y0 > (page_height - MARGIN_BOTTOM):
+                skip = True
+            if not skip:
+                for table_rect in table_bboxes:
+                    if table_rect.intersects(rect):
+                        skip = True
+                        break
+
+            if skip:
+                continue
+
+            # Индекс слов только по тем, что реально участвуют в подсветке
+            source_meta = word_to_source.get(global_filtered_idx)
+            global_filtered_idx += 1
+
+            if not source_meta:
+                if current:
+                    blocks.append(current)
+                    current = None
+                continue
+
+            x0, y0, x1, y1 = rect.x0, rect.y0, rect.x1 + 2, rect.y1
+
+            if current and current['sid'] == source_meta['sid'] and abs(current['y'] - y0) < 5:
+                current['w'] = max(current['w'], x1 - current['x'])
+                current['h'] = max(current['h'], y1 - y0)
+            else:
+                if current:
+                    blocks.append(current)
+                current = {
+                    'x': x0,
+                    'y': y0,
+                    'w': x1 - x0,
+                    'h': y1 - y0,
+                    'sid': source_meta['sid'],
+                    'cit': source_meta['cit']
+                }
+
+        if current:
+            blocks.append(current)
+
+        pages.append({
+            'text': text,
+            'blocks': blocks,
+            'w': page.rect.width,
+            'h': page.rect.height,
+        })
+
+    doc.close()
+
+    return render_template('report_exact.html',
+                         filename=filename,
+                         orig=round(unique, 1),
+                         plag=round(plag, 1),
+                         cit=round(pc, 1),
+                         total=len(pages),
+                         pages=pages)
 
 
 @app.route('/report/<uid>/<filename>')
