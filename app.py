@@ -141,7 +141,8 @@ def extract_pdf_words_with_meta(doc, skip_margins_tables=False, margin_top=80, m
 
         page_height = page.rect.height
         words_on_page = page.get_text("words")
-        words_on_page.sort(key=lambda w: (round(w[1], 1), w[0]))
+        # words_on_page.sort(key=lambda w: (round(w[1], 1), w[0]))
+        words_on_page.sort(key=lambda w: (w[5], w[6], w[7]))
 
         for w in words_on_page:
             rect = fitz.Rect(w[:4])
@@ -157,12 +158,20 @@ def extract_pdf_words_with_meta(doc, skip_margins_tables=False, margin_top=80, m
 
             text = w[4]
             stream.append({
-                'page': page_num,
-                'rect': rect,
-                'text': text,
-                'norm': normalize_word_token(text),
-                'skip': skip,
-            })
+                "text": w[4],
+                "rect": fitz.Rect(w[:4]),
+                "page": page_num,
+                "page_height": page_height,
+                "norm": normalize_word_token(w[4]),
+                "skip": skip
+            })            
+            # stream.append({
+                # 'page': page_num,
+                # 'rect': rect,
+                # 'text': text,
+                # 'norm': normalize_word_token(text),
+                # 'skip': skip,
+            # })
     return stream
 
 
@@ -176,7 +185,7 @@ def align_streams_with_anchors(source_tokens, target_tokens, ngram=5):
     """
     n = max(3, ngram)
     src_len, tgt_len = len(source_tokens), len(target_tokens)
-    mapping = [None] * src_len
+    mapping = [None] * src_len    
 
     if src_len == 0 or tgt_len == 0:
         return mapping
@@ -192,6 +201,13 @@ def align_streams_with_anchors(source_tokens, target_tokens, ngram=5):
     tgt_ng = build_ngram_index(target_tokens, n)
 
     anchors = []
+    
+    # fallback если якорей нет
+    if not anchors:
+        for i in range(min(src_len, tgt_len)):
+            mapping[i] = i
+        return mapping    
+    
     for ng, src_pos in src_ng.items():
         tgt_pos = tgt_ng.get(ng)
         if not tgt_pos:
@@ -283,13 +299,14 @@ def build_highlight_blocks_from_mapping(source_to_target, source_to_meta, target
     current = None
     for _, tw, meta in triples:
         rect = tw['rect']
-        x0, y0, x1, y1 = rect.x0, rect.y0, rect.x1 + 2, rect.y1
+        x0, y0, x1, y1 = rect.x0, rect.y0, rect.x1 + 2, rect.y1        
 
         if (
             current
             and current['sid'] == meta['sid']
             and current['page'] == tw['page']
-            and abs(current['y'] - y0) < 5
+            # and abs(current['y'] - y0) < 5
+            and abs(current['y'] - y0) < (rect.height * 0.6)
             and x0 <= current['x'] + current['w'] + 14
         ):
             current['w'] = max(current['w'], x1 - current['x'])
@@ -1576,13 +1593,19 @@ def report_view_accurate(uid, filename):
     doc = fitz.open(pdf_path)
 
     # source stream: все слова; target stream: слова после фильтра полей/таблиц
+    # full_stream = extract_pdf_words_with_meta(doc, skip_margins_tables=False)
+    # filtered_stream = [w for w in extract_pdf_words_with_meta(doc, skip_margins_tables=True) if not w['skip']]
+
     full_stream = extract_pdf_words_with_meta(doc, skip_margins_tables=False)
-    filtered_stream = [w for w in extract_pdf_words_with_meta(doc, skip_margins_tables=True) if not w['skip']]
+    filtered_stream = [w for w in full_stream if not w['skip']]
 
     full_tokens = [w['norm'] for w in full_stream]
     filt_tokens = [w['norm'] for w in filtered_stream]
+    
+    print("full tokens:", len(full_tokens))
+    print("filtered tokens:", len(filt_tokens))   
 
-    src_to_tgt = align_streams_with_anchors(full_tokens, filt_tokens, ngram=5)
+    src_to_tgt = align_streams_with_anchors(full_tokens, filt_tokens, ngram=3)
     page_blocks_map = build_highlight_blocks_from_mapping(src_to_tgt, source_to_meta, filtered_stream)
 
     pages = []
@@ -1649,8 +1672,11 @@ def report_view_accurate_alt(uid, filename):
         api_tokens = [t for t in api_tokens if t]
     else:
         api_tokens = pdf_tokens
+        
+    print("pdf tokens:", len(pdf_tokens))
+    print("api tokens:", len(api_tokens))        
 
-    src_to_tgt = align_streams_with_anchors(api_tokens, pdf_tokens, ngram=4)
+    src_to_tgt = align_streams_with_anchors(api_tokens, pdf_tokens, ngram=3)
     page_blocks_map = build_highlight_blocks_from_mapping(src_to_tgt, source_to_meta, pdf_stream)
 
     pages = []
