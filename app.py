@@ -9,6 +9,8 @@ import random
 import datetime
 import time
 import uuid
+import re
+from difflib import SequenceMatcher
 from datetime import timedelta
 from urllib.parse import urlparse
 import pdfkit
@@ -117,6 +119,198 @@ def get_api_metric(api_data, keys, default=0.0):
         if key in api_data and api_data.get(key) is not None:
             return safe_percent(api_data.get(key), default)
     return default
+
+def normalize_word_token(token):
+    """Нормализация слова для выравнивания потоков."""
+    if token is None:
+        return ""
+    token = str(token).lower().replace('ё', 'е')
+    token = re.sub(r'[^a-zа-я0-9]+', '', token, flags=re.IGNORECASE)
+    return token
+
+
+def extract_pdf_words_with_meta(doc, skip_margins_tables=False, margin_top=80, margin_bottom=80):
+    """Извлекает слова PDF с метаданными, опционально фильтруя поля/таблицы."""
+    stream = []
+    for page_num, page in enumerate(doc):
+        try:
+            tables = page.find_tables()
+            table_bboxes = [fitz.Rect(tab.bbox) for tab in tables]
+        except:
+            table_bboxes = []
+
+        page_height = page.rect.height
+        words_on_page = page.get_text("words")
+        words_on_page.sort(key=lambda w: (round(w[1], 1), w[0]))
+
+        for w in words_on_page:
+            rect = fitz.Rect(w[:4])
+            skip = False
+            if skip_margins_tables:
+                if rect.y1 < margin_top or rect.y0 > (page_height - margin_bottom):
+                    skip = True
+                if not skip:
+                    for table_rect in table_bboxes:
+                        if table_rect.intersects(rect):
+                            skip = True
+                            break
+
+            text = w[4]
+            stream.append({
+                'page': page_num,
+                'rect': rect,
+                'text': text,
+                'norm': normalize_word_token(text),
+                'skip': skip,
+            })
+    return stream
+
+
+def align_streams_with_anchors(source_tokens, target_tokens, ngram=5):
+    """
+    Production-метод:
+    1) n-gram якоря
+    2) локальное выравнивание SequenceMatcher
+    3) коррекция смещения
+    Возвращает map source_idx -> target_idx (или None)
+    """
+    n = max(3, ngram)
+    src_len, tgt_len = len(source_tokens), len(target_tokens)
+    mapping = [None] * src_len
+
+    if src_len == 0 or tgt_len == 0:
+        return mapping
+
+    def build_ngram_index(tokens, nsize):
+        idx = {}
+        for i in range(0, max(0, len(tokens) - nsize + 1)):
+            ng = tuple(tokens[i:i+nsize])
+            idx.setdefault(ng, []).append(i)
+        return idx
+
+    src_ng = build_ngram_index(source_tokens, n)
+    tgt_ng = build_ngram_index(target_tokens, n)
+
+    anchors = []
+    for ng, src_pos in src_ng.items():
+        tgt_pos = tgt_ng.get(ng)
+        if not tgt_pos:
+            continue
+        if len(src_pos) == 1 and len(tgt_pos) == 1:
+            anchors.append((src_pos[0], tgt_pos[0]))
+
+    anchors.sort(key=lambda x: x[0])
+
+    # Монотонный набор якорей
+    mono = []
+    last_t = -1
+    for sp, tp in anchors:
+        if tp > last_t:
+            mono.append((sp, tp))
+            last_t = tp
+
+    # Границы
+    boundaries = [(-1, -1)] + mono + [(src_len, tgt_len)]
+
+    # 2) локальное выравнивание между якорями
+    for (s0, t0), (s1, t1) in zip(boundaries, boundaries[1:]):
+        ss, se = s0 + 1, s1
+        ts, te = t0 + 1, t1
+        if ss >= se or ts >= te:
+            continue
+
+        sm = SequenceMatcher(None, source_tokens[ss:se], target_tokens[ts:te], autojunk=False)
+        for a, b, size in sm.get_matching_blocks():
+            if size == 0:
+                continue
+            for k in range(size):
+                mapping[ss + a + k] = ts + b + k
+
+    # Якорные n-граммы заполняем явно
+    for sp, tp in mono:
+        for k in range(n):
+            si = sp + k
+            ti = tp + k
+            if 0 <= si < src_len and 0 <= ti < tgt_len:
+                mapping[si] = ti
+
+    # 3) коррекция смещения для дыр
+    known = [(i, t) for i, t in enumerate(mapping) if t is not None]
+    if known:
+        known_idx = [i for i, _ in known]
+        known_delta = [t - i for i, t in known]
+
+        for i in range(src_len):
+            if mapping[i] is not None:
+                continue
+            # локальная медиана смещения по соседям
+            neigh = []
+            for k in range(max(0, i-80), min(src_len, i+81)):
+                t = mapping[k]
+                if t is not None:
+                    neigh.append(t - k)
+            if neigh:
+                neigh.sort()
+                d = neigh[len(neigh)//2]
+            else:
+                d = known_delta[len(known_delta)//2]
+
+            cand = i + d
+            if 0 <= cand < tgt_len:
+                mapping[i] = cand
+
+    return mapping
+
+
+def build_highlight_blocks_from_mapping(source_to_target, source_to_meta, target_stream):
+    """Строит блоки подсветки по map source_idx -> target_idx."""
+    page_blocks_map = {}
+    for w in target_stream:
+        page_blocks_map.setdefault(w['page'], [])
+
+    triples = []
+    for src_idx, meta in source_to_meta.items():
+        if src_idx < 0 or src_idx >= len(source_to_target):
+            continue
+        tgt_idx = source_to_target[src_idx]
+        if tgt_idx is None or tgt_idx < 0 or tgt_idx >= len(target_stream):
+            continue
+        tw = target_stream[tgt_idx]
+        triples.append((tgt_idx, tw, meta))
+
+    triples.sort(key=lambda x: x[0])
+
+    current = None
+    for _, tw, meta in triples:
+        rect = tw['rect']
+        x0, y0, x1, y1 = rect.x0, rect.y0, rect.x1 + 2, rect.y1
+
+        if (
+            current
+            and current['sid'] == meta['sid']
+            and current['page'] == tw['page']
+            and abs(current['y'] - y0) < 5
+            and x0 <= current['x'] + current['w'] + 14
+        ):
+            current['w'] = max(current['w'], x1 - current['x'])
+            current['h'] = max(current['h'], y1 - y0)
+        else:
+            if current:
+                page_blocks_map[current['page']].append(current)
+            current = {
+                'page': tw['page'],
+                'x': x0,
+                'y': y0,
+                'w': x1 - x0,
+                'h': y1 - y0,
+                'sid': meta['sid'],
+                'cit': meta['cit']
+            }
+
+    if current:
+        page_blocks_map[current['page']].append(current)
+
+    return page_blocks_map
 
 def save_file_unique(content, filename, base_folder="uploads"):
     """
@@ -1142,6 +1336,7 @@ def api_highlight():
         preview_html_legacy_url = url_for('preview_html_result', uid=uid, filename=final_pdf_name, _external=True)
         preview_html_url = url_for('preview_html_accurate_result', uid=uid, filename=final_pdf_name, _external=True)
         preview_html_accurate_url = preview_html_url
+        preview_html_accurate_alt_url = url_for('preview_html_accurate_alt_result', uid=uid, filename=final_pdf_name, _external=True)
         
         return jsonify({
             "status": "success", 
@@ -1149,6 +1344,7 @@ def api_highlight():
             "preview_url": preview_url,
             "preview_html_url": preview_html_url,
             "preview_html_accurate_url": preview_html_accurate_url,
+            "preview_html_accurate_alt_url": preview_html_accurate_alt_url,
             "preview_html_legacy_url": preview_html_legacy_url,
             "uid": uid
         })
@@ -1329,6 +1525,15 @@ def upload():
     return redirect(url_for('report_view', uid=uid, filename=final_pdf))
 
 
+@app.route('/preview-html-accurate-alt/<uid>/<filename>')
+def preview_html_accurate_alt_result(uid, filename):
+    """Отдельный ALT HTML-превью для тестового метода text alignment."""
+    directory = os.path.join(UPLOAD_FOLDER, uid)
+    if not os.path.exists(directory):
+        return "File not found (bad uid)", 404
+    return redirect(url_for('report_view_accurate_alt', uid=uid, filename=filename))
+
+
 @app.route('/preview-html-accurate/<uid>/<filename>')
 def preview_html_accurate_result(uid, filename):
     """Отдельный HTML-превью с альтернативной логикой позиционирования/индексации."""
@@ -1340,7 +1545,7 @@ def preview_html_accurate_result(uid, filename):
 
 @app.route('/report-accurate/<uid>/<filename>')
 def report_view_accurate(uid, filename):
-    """Альтернативный HTML-рендер подсветки: точное повторение индексации из create_highlighted_pdf."""
+    """Production-метод (Turnitin-like): anchors + SequenceMatcher + смещение."""
     json_path = os.path.join(UPLOAD_FOLDER, uid, 'api_data.json')
     name_without_ext = os.path.splitext(filename)[0]
     pdf_path = os.path.join(UPLOAD_FOLDER, uid, f"{name_without_ext}_highlighted.pdf")
@@ -1357,7 +1562,7 @@ def report_view_accurate(uid, filename):
     pc = get_api_metric(api_data, ['pc', 'citation', 'cit'], default=0.0)
     plag = safe_percent(api_data.get('plag', api_data.get('plagiat', 100 - unique - pc)), 100 - unique - pc)
 
-    word_to_source = {}
+    source_to_meta = {}
     urls = api_data.get('urls', [])
     citation_id = None
     for idx, u in enumerate(urls):
@@ -1366,80 +1571,89 @@ def report_view_accurate(uid, filename):
             citation_id = sid
         words_str = u.get('clean_words_str', u.get('words', ''))
         for widx in parse_compressed_indices(words_str):
-            word_to_source[widx] = {'sid': sid, 'cit': sid == citation_id}
+            source_to_meta[widx] = {'sid': sid, 'cit': sid == citation_id}
 
     doc = fitz.open(pdf_path)
+
+    # source stream: все слова; target stream: слова после фильтра полей/таблиц
+    full_stream = extract_pdf_words_with_meta(doc, skip_margins_tables=False)
+    filtered_stream = [w for w in extract_pdf_words_with_meta(doc, skip_margins_tables=True) if not w['skip']]
+
+    full_tokens = [w['norm'] for w in full_stream]
+    filt_tokens = [w['norm'] for w in filtered_stream]
+
+    src_to_tgt = align_streams_with_anchors(full_tokens, filt_tokens, ngram=5)
+    page_blocks_map = build_highlight_blocks_from_mapping(src_to_tgt, source_to_meta, filtered_stream)
+
     pages = []
-
-    # 1) Собираем global_word_list строго как в create_highlighted_pdf
-    global_word_list = []
-    MARGIN_TOP = 80
-    MARGIN_BOTTOM = 80
-
     for page_num, page in enumerate(doc):
-        try:
-            tables = page.find_tables()
-            table_bboxes = [fitz.Rect(tab.bbox) for tab in tables]
-        except:
-            table_bboxes = []
-
-        page_height = page.rect.height
-        words_on_page = page.get_text("words")
-        words_on_page.sort(key=lambda w: (round(w[1], 1), w[0]))
-
-        for w in words_on_page:
-            word_rect = fitz.Rect(w[:4])
-            is_excluded = False
-
-            if word_rect.y1 < MARGIN_TOP or word_rect.y0 > (page_height - MARGIN_BOTTOM):
-                is_excluded = True
-            if not is_excluded:
-                for table_rect in table_bboxes:
-                    if table_rect.intersects(word_rect):
-                        is_excluded = True
-                        break
-
-            global_word_list.append({
-                'page': page_num,
-                'rect': word_rect,
-                'skip_highlight': is_excluded,
-            })
-
-    # 2) Строим блоки подсветки по тем же индексам i
-    page_blocks_map = {i: [] for i in range(len(doc))}
-
-    for i, word_data in enumerate(global_word_list):
-        if word_data['skip_highlight']:
-            continue
-
-        source_meta = word_to_source.get(i)
-        if not source_meta:
-            continue
-
-        rect = word_data['rect']
-        final_rect = fitz.Rect(rect.x0, rect.y0, rect.x1 + 2, rect.y1)
-
-        if i + 1 < len(global_word_list):
-            next_w = global_word_list[i + 1]
-            next_src = word_to_source.get(i + 1)
-            if (
-                next_src
-                and next_src['sid'] == source_meta['sid']
-                and not next_w['skip_highlight']
-                and next_w['page'] == word_data['page']
-                and abs(next_w['rect'].y0 - rect.y0) < 5
-            ):
-                final_rect = fitz.Rect(rect.x0, rect.y0, next_w['rect'].x0, rect.y1)
-
-        page_blocks_map[word_data['page']].append({
-            'x': final_rect.x0,
-            'y': final_rect.y0,
-            'w': (final_rect.x1 - final_rect.x0),
-            'h': (final_rect.y1 - final_rect.y0),
-            'sid': source_meta['sid'],
-            'cit': source_meta['cit'],
+        text = page.get_text("html")
+        pages.append({
+            'text': text,
+            'blocks': page_blocks_map.get(page_num, []),
+            'w': page.rect.width,
+            'h': page.rect.height,
         })
 
+    doc.close()
+
+    return render_template('report_exact.html',
+                         filename=filename,
+                         orig=round(unique, 1),
+                         plag=round(plag, 1),
+                         cit=round(pc, 1),
+                         total=len(pages),
+                         pages=pages)
+
+
+@app.route('/report-accurate-alt/<uid>/<filename>')
+def report_view_accurate_alt(uid, filename):
+    """ALT-метод: text alignment через нормализованный поток слов (для тестов)."""
+    json_path = os.path.join(UPLOAD_FOLDER, uid, 'api_data.json')
+    name_without_ext = os.path.splitext(filename)[0]
+    pdf_path = os.path.join(UPLOAD_FOLDER, uid, f"{name_without_ext}_highlighted.pdf")
+
+    if not os.path.exists(pdf_path):
+        return "PDF not found", 404
+
+    api_data = {}
+    if os.path.exists(json_path):
+        with open(json_path, 'r', encoding='utf-8') as f:
+            api_data = json.load(f)
+
+    unique = get_api_metric(api_data, ['unique', 'originality', 'original', 'orig'], default=0.0)
+    pc = get_api_metric(api_data, ['pc', 'citation', 'cit'], default=0.0)
+    plag = safe_percent(api_data.get('plag', api_data.get('plagiat', 100 - unique - pc)), 100 - unique - pc)
+
+    source_to_meta = {}
+    urls = api_data.get('urls', [])
+    citation_id = None
+    for idx, u in enumerate(urls):
+        sid = idx + 1
+        if u.get('is_citation'):
+            citation_id = sid
+        words_str = u.get('clean_words_str', u.get('words', ''))
+        for widx in parse_compressed_indices(words_str):
+            source_to_meta[widx] = {'sid': sid, 'cit': sid == citation_id}
+
+    doc = fitz.open(pdf_path)
+
+    # PDF поток для координат (без фильтра для максимально плотного соответствия)
+    pdf_stream = extract_pdf_words_with_meta(doc, skip_margins_tables=False)
+    pdf_tokens = [w['norm'] for w in pdf_stream]
+
+    # API-текстовый поток (если есть), иначе fallback на PDF поток
+    api_text = api_data.get('text') or api_data.get('document_text') or api_data.get('full_text') or ''
+    if api_text:
+        api_tokens = [normalize_word_token(t) for t in re.split(r'\s+', str(api_text))]
+        api_tokens = [t for t in api_tokens if t]
+    else:
+        api_tokens = pdf_tokens
+
+    src_to_tgt = align_streams_with_anchors(api_tokens, pdf_tokens, ngram=4)
+    page_blocks_map = build_highlight_blocks_from_mapping(src_to_tgt, source_to_meta, pdf_stream)
+
+    pages = []
     for page_num, page in enumerate(doc):
         text = page.get_text("html")
         pages.append({
