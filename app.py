@@ -319,6 +319,95 @@ def render_pdf_page_png_base64(page, zoom=1.5):
     return base64.b64encode(pix.tobytes("png")).decode("utf-8")
 
 
+def build_blocks_like_pdf_highlighting(doc, api_data):
+    """Строит блоки 1-в-1 по той же индексации, что использует create_highlighted_pdf."""
+    urls = api_data.get('urls', [])
+
+    citation_source_id = None
+    for idx, u in enumerate(urls):
+        if u.get('is_citation'):
+            citation_source_id = idx + 1
+            break
+
+    plagiat_map = {}
+    for idx, url_item in enumerate(urls):
+        source_id = idx + 1
+        words_str = url_item.get('clean_words_str') or url_item.get('words', '')
+        if not words_str:
+            continue
+        for w_idx in parse_compressed_indices(words_str):
+            plagiat_map[w_idx] = source_id
+
+    global_word_list = []
+    MARGIN_TOP = 80
+    MARGIN_BOTTOM = 80
+
+    for page_num, page in enumerate(doc):
+        try:
+            tables = page.find_tables()
+            table_bboxes = [fitz.Rect(tab.bbox) for tab in tables]
+        except:
+            table_bboxes = []
+
+        page_height = page.rect.height
+        words_on_page = page.get_text("words")
+        words_on_page.sort(key=lambda w: (round(w[1], 1), w[0]))
+
+        for w in words_on_page:
+            word_rect = fitz.Rect(w[:4])
+            is_excluded = False
+            if word_rect.y1 < MARGIN_TOP or word_rect.y0 > (page_height - MARGIN_BOTTOM):
+                is_excluded = True
+            if not is_excluded:
+                for table_rect in table_bboxes:
+                    if table_rect.intersects(word_rect):
+                        is_excluded = True
+                        break
+
+            global_word_list.append({
+                'page': page_num,
+                'rect': word_rect,
+                'skip_highlight': is_excluded,
+            })
+
+    page_blocks_map = {i: [] for i in range(len(doc))}
+
+    for i, word_data in enumerate(global_word_list):
+        if word_data['skip_highlight']:
+            continue
+
+        source_id = plagiat_map.get(i)
+        if not source_id:
+            continue
+
+        is_citation = (source_id == citation_source_id)
+
+        rect = word_data['rect']
+        final_rect = fitz.Rect(rect.x0, rect.y0, rect.x1 + 2, rect.y1)
+
+        if i + 1 < len(global_word_list):
+            next_w = global_word_list[i + 1]
+            next_src = plagiat_map.get(i + 1)
+            if (
+                next_src == source_id
+                and not next_w['skip_highlight']
+                and next_w['page'] == word_data['page']
+                and abs(next_w['rect'].y0 - rect.y0) < 5
+            ):
+                final_rect = fitz.Rect(rect.x0, rect.y0, next_w['rect'].x0, rect.y1)
+
+        page_blocks_map[word_data['page']].append({
+            'x': final_rect.x0,
+            'y': final_rect.y0,
+            'w': (final_rect.x1 - final_rect.x0),
+            'h': (final_rect.y1 - final_rect.y0),
+            'sid': source_id,
+            'cit': is_citation,
+        })
+
+    return page_blocks_map
+
+
 def save_file_unique(content, filename, base_folder="uploads"):
     """
     Сохраняет файл в структуру папок /uploads/{uid}/filename
@@ -1582,15 +1671,8 @@ def report_view_accurate(uid, filename):
 
     doc = fitz.open(pdf_path)
 
-    # source stream: все слова; target stream: слова после фильтра полей/таблиц
-    full_stream = extract_pdf_words_with_meta(doc, skip_margins_tables=False)
-    filtered_stream = [w for w in extract_pdf_words_with_meta(doc, skip_margins_tables=True) if not w['skip']]
-
-    full_tokens = [w['norm'] for w in full_stream]
-    filt_tokens = [w['norm'] for w in filtered_stream]
-
-    src_to_tgt = align_streams_with_anchors(full_tokens, filt_tokens, ngram=5)
-    page_blocks_map = build_highlight_blocks_from_mapping(src_to_tgt, source_to_meta, filtered_stream)
+    # Берем рабочий окрас по той же схеме, что и при генерации PDF.
+    page_blocks_map = build_blocks_like_pdf_highlighting(doc, api_data)
 
     # Визуальный слой берем из оригинального PDF (без подсветки), чтобы он был 1-в-1 как исходник.
     original_pdf_path = os.path.join(UPLOAD_FOLDER, uid, f"{name_without_ext}.pdf")
@@ -1652,20 +1734,8 @@ def report_view_accurate_alt(uid, filename):
 
     doc = fitz.open(pdf_path)
 
-    # PDF поток для координат (без фильтра для максимально плотного соответствия)
-    pdf_stream = extract_pdf_words_with_meta(doc, skip_margins_tables=False)
-    pdf_tokens = [w['norm'] for w in pdf_stream]
-
-    # API-текстовый поток (если есть), иначе fallback на PDF поток
-    api_text = api_data.get('text') or api_data.get('document_text') or api_data.get('full_text') or ''
-    if api_text:
-        api_tokens = [normalize_word_token(t) for t in re.split(r'\s+', str(api_text))]
-        api_tokens = [t for t in api_tokens if t]
-    else:
-        api_tokens = pdf_tokens
-
-    src_to_tgt = align_streams_with_anchors(api_tokens, pdf_tokens, ngram=4)
-    page_blocks_map = build_highlight_blocks_from_mapping(src_to_tgt, source_to_meta, pdf_stream)
+    # Для ALT-превью визуальный слой тот же, и окрас берем рабочий (как в PDF генерации).
+    page_blocks_map = build_blocks_like_pdf_highlighting(doc, api_data)
 
     # Визуальный слой берем из оригинального PDF (без подсветки), чтобы он был 1-в-1 как исходник.
     original_pdf_path = os.path.join(UPLOAD_FOLDER, uid, f"{name_without_ext}.pdf")
