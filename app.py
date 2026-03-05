@@ -1139,8 +1139,9 @@ def api_highlight():
         # Теперь передаем и filename, и uid
         download_url = url_for('download_result', uid=uid, filename=final_pdf_name, _external=True)
         preview_url = url_for('preview_result', uid=uid, filename=final_pdf_name, _external=True)
-        preview_html_url = url_for('preview_html_result', uid=uid, filename=final_pdf_name, _external=True)
-        preview_html_accurate_url = url_for('preview_html_accurate_result', uid=uid, filename=final_pdf_name, _external=True)
+        preview_html_legacy_url = url_for('preview_html_result', uid=uid, filename=final_pdf_name, _external=True)
+        preview_html_url = url_for('preview_html_accurate_result', uid=uid, filename=final_pdf_name, _external=True)
+        preview_html_accurate_url = preview_html_url
         
         return jsonify({
             "status": "success", 
@@ -1148,6 +1149,7 @@ def api_highlight():
             "preview_url": preview_url,
             "preview_html_url": preview_html_url,
             "preview_html_accurate_url": preview_html_accurate_url,
+            "preview_html_legacy_url": preview_html_legacy_url,
             "uid": uid
         })
 
