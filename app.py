@@ -312,6 +312,13 @@ def build_highlight_blocks_from_mapping(source_to_target, source_to_meta, target
 
     return page_blocks_map
 
+def render_pdf_page_png_base64(page, zoom=1.5):
+    """Рендер страницы PDF в PNG(base64) для точного визуального слоя."""
+    mat = fitz.Matrix(zoom, zoom)
+    pix = page.get_pixmap(matrix=mat, alpha=False)
+    return base64.b64encode(pix.tobytes("png")).decode("utf-8")
+
+
 def save_file_unique(content, filename, base_folder="uploads"):
     """
     Сохраняет файл в структуру папок /uploads/{uid}/filename
@@ -1585,16 +1592,23 @@ def report_view_accurate(uid, filename):
     src_to_tgt = align_streams_with_anchors(full_tokens, filt_tokens, ngram=5)
     page_blocks_map = build_highlight_blocks_from_mapping(src_to_tgt, source_to_meta, filtered_stream)
 
+    # Визуальный слой берем из оригинального PDF (без подсветки), чтобы он был 1-в-1 как исходник.
+    original_pdf_path = os.path.join(UPLOAD_FOLDER, uid, f"{name_without_ext}.pdf")
+    visual_doc = fitz.open(original_pdf_path) if os.path.exists(original_pdf_path) else fitz.open(pdf_path)
+
     pages = []
-    for page_num, page in enumerate(doc):
-        text = page.get_text("html")
+    total_pages = min(len(doc), len(visual_doc))
+    for page_num in range(total_pages):
+        vpage = visual_doc[page_num]
+        page_img = render_pdf_page_png_base64(vpage, zoom=1.5)
         pages.append({
-            'text': text,
+            'image': page_img,
             'blocks': page_blocks_map.get(page_num, []),
-            'w': page.rect.width,
-            'h': page.rect.height,
+            'w': vpage.rect.width,
+            'h': vpage.rect.height,
         })
 
+    visual_doc.close()
     doc.close()
 
     return render_template('report_exact.html',
@@ -1653,16 +1667,23 @@ def report_view_accurate_alt(uid, filename):
     src_to_tgt = align_streams_with_anchors(api_tokens, pdf_tokens, ngram=4)
     page_blocks_map = build_highlight_blocks_from_mapping(src_to_tgt, source_to_meta, pdf_stream)
 
+    # Визуальный слой берем из оригинального PDF (без подсветки), чтобы он был 1-в-1 как исходник.
+    original_pdf_path = os.path.join(UPLOAD_FOLDER, uid, f"{name_without_ext}.pdf")
+    visual_doc = fitz.open(original_pdf_path) if os.path.exists(original_pdf_path) else fitz.open(pdf_path)
+
     pages = []
-    for page_num, page in enumerate(doc):
-        text = page.get_text("html")
+    total_pages = min(len(doc), len(visual_doc))
+    for page_num in range(total_pages):
+        vpage = visual_doc[page_num]
+        page_img = render_pdf_page_png_base64(vpage, zoom=1.5)
         pages.append({
-            'text': text,
+            'image': page_img,
             'blocks': page_blocks_map.get(page_num, []),
-            'w': page.rect.width,
-            'h': page.rect.height,
+            'w': vpage.rect.width,
+            'h': vpage.rect.height,
         })
 
+    visual_doc.close()
     doc.close()
 
     return render_template('report_exact.html',
