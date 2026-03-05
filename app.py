@@ -1340,7 +1340,7 @@ def preview_html_accurate_result(uid, filename):
 
 @app.route('/report-accurate/<uid>/<filename>')
 def report_view_accurate(uid, filename):
-    """Альтернативный HTML-рендер подсветки: координаты в pt и индексация только по не-пропущенным словам."""
+    """Альтернативный HTML-рендер подсветки: точное повторение индексации из create_highlighted_pdf."""
     json_path = os.path.join(UPLOAD_FOLDER, uid, 'api_data.json')
     name_without_ext = os.path.splitext(filename)[0]
     pdf_path = os.path.join(UPLOAD_FOLDER, uid, f"{name_without_ext}_highlighted.pdf")
@@ -1370,16 +1370,13 @@ def report_view_accurate(uid, filename):
 
     doc = fitz.open(pdf_path)
     pages = []
+
+    # 1) Собираем global_word_list строго как в create_highlighted_pdf
+    global_word_list = []
     MARGIN_TOP = 80
     MARGIN_BOTTOM = 80
 
-    global_filtered_idx = 0
-
     for page_num, page in enumerate(doc):
-        text = page.get_text("html")
-        words = page.get_text("words")
-        words.sort(key=lambda w: (round(w[1], 1), w[0]))
-
         try:
             tables = page.find_tables()
             table_bboxes = [fitz.Rect(tab.bbox) for tab in tables]
@@ -1387,56 +1384,67 @@ def report_view_accurate(uid, filename):
             table_bboxes = []
 
         page_height = page.rect.height
-        blocks = []
-        current = None
+        words_on_page = page.get_text("words")
+        words_on_page.sort(key=lambda w: (round(w[1], 1), w[0]))
 
-        for i, w in enumerate(words):
-            rect = fitz.Rect(w[:4])
-            skip = False
-            if rect.y1 < MARGIN_TOP or rect.y0 > (page_height - MARGIN_BOTTOM):
-                skip = True
-            if not skip:
+        for w in words_on_page:
+            word_rect = fitz.Rect(w[:4])
+            is_excluded = False
+
+            if word_rect.y1 < MARGIN_TOP or word_rect.y0 > (page_height - MARGIN_BOTTOM):
+                is_excluded = True
+            if not is_excluded:
                 for table_rect in table_bboxes:
-                    if table_rect.intersects(rect):
-                        skip = True
+                    if table_rect.intersects(word_rect):
+                        is_excluded = True
                         break
 
-            if skip:
-                continue
+            global_word_list.append({
+                'page': page_num,
+                'rect': word_rect,
+                'skip_highlight': is_excluded,
+            })
 
-            # Индекс слов только по тем, что реально участвуют в подсветке
-            source_meta = word_to_source.get(global_filtered_idx)
-            global_filtered_idx += 1
+    # 2) Строим блоки подсветки по тем же индексам i
+    page_blocks_map = {i: [] for i in range(len(doc))}
 
-            if not source_meta:
-                if current:
-                    blocks.append(current)
-                    current = None
-                continue
+    for i, word_data in enumerate(global_word_list):
+        if word_data['skip_highlight']:
+            continue
 
-            x0, y0, x1, y1 = rect.x0, rect.y0, rect.x1 + 2, rect.y1
+        source_meta = word_to_source.get(i)
+        if not source_meta:
+            continue
 
-            if current and current['sid'] == source_meta['sid'] and abs(current['y'] - y0) < 5:
-                current['w'] = max(current['w'], x1 - current['x'])
-                current['h'] = max(current['h'], y1 - y0)
-            else:
-                if current:
-                    blocks.append(current)
-                current = {
-                    'x': x0,
-                    'y': y0,
-                    'w': x1 - x0,
-                    'h': y1 - y0,
-                    'sid': source_meta['sid'],
-                    'cit': source_meta['cit']
-                }
+        rect = word_data['rect']
+        final_rect = fitz.Rect(rect.x0, rect.y0, rect.x1 + 2, rect.y1)
 
-        if current:
-            blocks.append(current)
+        if i + 1 < len(global_word_list):
+            next_w = global_word_list[i + 1]
+            next_src = word_to_source.get(i + 1)
+            if (
+                next_src
+                and next_src['sid'] == source_meta['sid']
+                and not next_w['skip_highlight']
+                and next_w['page'] == word_data['page']
+                and abs(next_w['rect'].y0 - rect.y0) < 5
+            ):
+                final_rect = fitz.Rect(rect.x0, rect.y0, next_w['rect'].x0, rect.y1)
 
+        page_blocks_map[word_data['page']].append({
+            'x': final_rect.x0,
+            'y': final_rect.y0,
+            'w': (final_rect.x1 - final_rect.x0),
+            'h': (final_rect.y1 - final_rect.y0),
+            'sid': source_meta['sid'],
+            'cit': source_meta['cit'],
+        })
+
+    for page_num, page in enumerate(doc):
+        text = page.get_text("html")
         pages.append({
             'text': text,
-            'blocks': blocks,
+            'blocks': page_blocks_map.get(page_num, []),
             'w': page.rect.width,
             'h': page.rect.height,
         })
